@@ -6,7 +6,7 @@ import {
   Navigation, Map as MapIcon, Info, Image as ImageIcon,
   Umbrella, AlertTriangle, Loader2, X, Cloud, Snowflake, Trash2,
   MessageCircle, Copy, CheckCheck, Volume2, RefreshCw, ZoomIn,
-  Pencil, Save
+  Pencil, Save, MoreVertical
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -513,8 +513,8 @@ const ItineraryView = ({
   const [journalLength, setJournalLength] = useState('短 (約50字)');
 
   // 📝 編輯模式狀態
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [editModal, setEditModal] = useState({ isOpen: false, placeIdx: null, data: null });
+  const [activeMenuIdx, setActiveMenuIdx] = useState(null); // 控制三個點選單開關
+  const [editModal, setEditModal] = useState({ isOpen: false, placeIdx: null, insertIdx: null, data: null });
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState(null); // 加入防呆刪除確認狀態
 
   useEffect(() => {
@@ -523,7 +523,7 @@ const ItineraryView = ({
     }
     setJournalMood('');
     setShowJournalForm(false);
-    setIsEditMode(false); 
+    setActiveMenuIdx(null); 
     setConfirmDeleteIdx(null);
 
     if (dayNavRef.current) {
@@ -637,12 +637,11 @@ const ItineraryView = ({
     updateFirestoreItinerary(newData);
   };
 
-  const openEditModal = (placeIdx = null, placeData = null) => {
+  const openEditModal = (placeIdx = null, placeData = null, insertIdx = null) => {
     setConfirmDeleteIdx(null);
-    // 【修復 2】：補上 openHours 與 bookingInfo 欄位預設值，解決無法新增此兩項資訊的問題
     const defaultData = { type: '景點', name: '', description: '', duration: '約 1 小時', badges: '', openHours: '', bookingInfo: '' };
     const formData = placeData ? { ...defaultData, ...placeData, badges: placeData.badges ? placeData.badges.join('，') : '' } : defaultData;
-    setEditModal({ isOpen: true, placeIdx, data: formData });
+    setEditModal({ isOpen: true, placeIdx, insertIdx, data: formData });
   };
 
   const saveEditModal = () => {
@@ -658,14 +657,17 @@ const ItineraryView = ({
 
     const processedData = { ...editModal.data, badges: processedBadges };
     
-    // 清除空字串屬性讓畫面不會誤渲染空標籤
     if (!processedData.openHours) delete processedData.openHours;
     if (!processedData.bookingInfo) delete processedData.bookingInfo;
 
     if (editModal.placeIdx !== null) {
       newPlaces[editModal.placeIdx] = processedData;
     } else {
-      newPlaces.push(processedData);
+      if (editModal.insertIdx !== null) {
+        newPlaces.splice(editModal.insertIdx, 0, processedData);
+      } else {
+        newPlaces.push(processedData);
+      }
     }
 
     dayData.places = newPlaces;
@@ -673,11 +675,29 @@ const ItineraryView = ({
 
     setItineraryData(newData);
     updateFirestoreItinerary(newData);
-    setEditModal({ isOpen: false, placeIdx: null, data: null });
+    setEditModal({ isOpen: false, placeIdx: null, insertIdx: null, data: null });
   };
 
   const mapQueryName = currentDay.mapKeyword || currentDay.places.find(p => ['景點', '活動', '購物'].includes(p.type))?.name || currentDay.places[0]?.name || "名古屋車站";
   const mapEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(mapQueryName)}&t=&z=13&ie=UTF8&iwloc=&output=embed`;
+
+  // UI Helper: 精緻低調的新增按鈕
+  const InlineAddButton = ({ insertIdx }) => (
+    <div className="relative flex items-center gap-4 z-10 group/add cursor-pointer my-1" onClick={() => openEditModal(null, null, insertIdx)}>
+      <div className="w-12 flex justify-center flex-shrink-0 relative">
+        <div className="bg-[#FAF9F6] py-2 z-10">
+          <div className="w-6 h-6 rounded-full bg-white border-2 border-gray-200 text-gray-400 flex items-center justify-center group-hover/add:border-[#773690] group-hover/add:text-[#773690] group-hover/add:bg-purple-50 group-hover/add:scale-110 transition-all shadow-sm">
+            <Plus size={14} strokeWidth={3} />
+          </div>
+        </div>
+      </div>
+      <div className="flex-1 opacity-0 group-hover/add:opacity-100 transition-opacity">
+        <span className="text-[11px] font-bold text-[#773690] bg-purple-50 border border-purple-100 px-2.5 py-1 rounded-full shadow-sm">
+          插入新行程
+        </span>
+      </div>
+    </div>
+  );
 
   return (
     <div className="h-full overflow-y-auto hide-scrollbar relative pb-[calc(1.5rem+env(safe-area-inset-bottom))] animate-in fade-in duration-300" ref={viewRef}>
@@ -708,12 +728,6 @@ const ItineraryView = ({
               <Calendar size={22} />
               {currentDay.dateInfo}
             </h2>
-            <button 
-              onClick={() => { setIsEditMode(!isEditMode); setConfirmDeleteIdx(null); }} 
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${isEditMode ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-            >
-              {isEditMode ? <><Check size={14} /> 完成</> : <><Pencil size={14} /> 編輯</>}
-            </button>
           </div>
           
           <div className="flex flex-col gap-2 text-sm text-gray-600">
@@ -802,216 +816,220 @@ const ItineraryView = ({
           </div>
         )}
 
-        <div className="space-y-6 relative before:absolute before:inset-0 before:ml-6 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-[#773690]/20 before:to-transparent">
+        <div className="flex flex-col relative before:absolute before:inset-0 before:ml-6 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-[#773690]/20 before:to-transparent">
+          
+          {/* 在最開頭的上方插入 */}
+          <InlineAddButton insertIdx={0} />
+
           {currentDay.places.map((place, idx) => {
             const isStrategy = place.type === '攻略';
 
             return (
-              <div key={idx} className="relative flex items-start gap-4 z-0 group">
-                <div className={`relative z-10 flex-shrink-0 w-12 h-12 rounded-full bg-white border-2 ${isStrategy ? 'border-orange-400 text-orange-500' : 'border-[#773690] text-[#773690]'} shadow-sm flex items-center justify-center transition-colors`}>
-                  {getIconForType(place.type, "")}
-                </div>
-
-                <div className={`flex-1 rounded-2xl p-5 shadow-sm border transition-all ${isEditMode ? 'ring-2 ring-purple-100 bg-gray-50' : 'hover:shadow-md bg-white'} ${isStrategy ? 'bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-100' : 'border-gray-100'}`}>
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className={`font-bold text-lg leading-tight ${isStrategy ? 'text-orange-800 flex items-center gap-1.5' : 'text-gray-800'}`}>
-                      {isStrategy && <MapIcon size={18} />}
-                      {place.name}
-                    </h3>
+              <React.Fragment key={idx}>
+                <div className="relative flex items-start gap-4 z-0 group py-2">
+                  <div className={`relative z-10 flex-shrink-0 w-12 h-12 rounded-full bg-white border-2 ${isStrategy ? 'border-orange-400 text-orange-500' : 'border-[#773690] text-[#773690]'} shadow-sm flex items-center justify-center transition-colors`}>
+                    {getIconForType(place.type, "")}
                   </div>
 
-                  {!isStrategy && place.openHours && (
-                    <div className="inline-flex items-center gap-1.5 bg-blue-50/80 text-blue-700 px-3 py-1.5 rounded-xl text-[13px] font-bold border border-blue-100/50 mb-3 shadow-sm">
-                      <Clock size={14} className="text-blue-600" />
-                      開放時間 {place.openHours}
-                    </div>
-                  )}
+                  <div className={`flex-1 rounded-2xl p-5 shadow-sm border transition-all hover:shadow-md bg-white ${isStrategy ? 'bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-100' : 'border-gray-100'}`}>
+                    <div className="flex justify-between items-start mb-2 relative">
+                      <h3 className={`font-bold text-lg leading-tight ${isStrategy ? 'text-orange-800 flex items-center gap-1.5' : 'text-gray-800'}`}>
+                        {isStrategy && <MapIcon size={18} />}
+                        {place.name}
+                      </h3>
 
-                  {!isStrategy && place.bookingInfo && (
-                    <div className="inline-flex items-center gap-1.5 bg-teal-50/80 text-teal-700 px-3 py-1.5 rounded-xl text-[13px] font-bold border border-teal-100/50 mb-3 shadow-sm">
-                      <CheckCheck size={14} className="text-teal-600" />
-                      {place.bookingInfo}
-                    </div>
-                  )}
-                  
-                  {place.badges && place.badges.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      {place.badges.map((badge, bIdx) => (
-                        <span key={bIdx} className={`text-xs px-2.5 py-1 rounded-full font-medium ${getBadgeStyle(badge)}`}>
-                          {badge}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <p className="text-gray-600 text-sm mb-4 leading-relaxed whitespace-pre-wrap">{place.description}</p>
-                  
-                  {!isStrategy && place.goshuins && (
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {place.goshuins.map((gs, gIdx) => (
-                        <div key={gIdx} className="inline-flex items-center gap-1.5 bg-[#773690]/10 text-[#773690] px-2.5 py-1.5 rounded-xl text-xs font-bold border border-[#773690]/20 shadow-sm">
-                          <span className="text-sm">⛩️</span>
-                          <span>御朱印 ({gs.name})</span>
-                          <span className="ml-0.5 bg-white px-1.5 py-0.5 rounded-md text-[10px] text-[#773690] shadow-sm">{gs.price}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {!isStrategy && place.gojoins && (
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {place.gojoins.map((gj, gIdx) => (
-                        <div key={gIdx} className="inline-flex items-center gap-1.5 bg-slate-700 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold border border-slate-600 shadow-sm">
-                          <span className="text-sm">🏯</span>
-                          <span>{gj.name}</span>
-                          <span className="ml-0.5 bg-slate-800 px-1.5 py-0.5 rounded-md text-[10px] text-slate-200">{gj.price}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* 【修復 1】：為攻略卡片補上漏掉的 extraImages 渲染邏輯 */}
-                  {place.extraImages && (
-                    <div className={`flex gap-3 mb-4 overflow-x-auto hide-scrollbar pb-2 ${isStrategy ? '' : 'mt-2'}`}>
-                      {place.extraImages.map((img, iIdx) => (
-                        <div 
-                          key={iIdx} 
-                          onClick={() => setPreviewImage(img.url)}
-                          className={`relative flex-shrink-0 w-28 h-20 rounded-xl overflow-hidden shadow-sm cursor-pointer group border ${isStrategy ? 'border-orange-200' : 'border-gray-200'}`}
+                      {/* 右上角的三個點選單 */}
+                      <div className="relative">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setActiveMenuIdx(activeMenuIdx === idx ? null : idx); setConfirmDeleteIdx(null); }}
+                          className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
                         >
-                          <img src={img.url} alt={img.title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" />
-                          <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <ZoomIn size={16} className="text-white mb-1" />
-                            <span className="text-[10px] text-white font-bold">{img.title}</span>
-                          </div>
-                          <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 pt-4">
-                            <p className="text-[10px] text-white font-bold truncate group-hover:opacity-0 transition-opacity">{img.title}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {isStrategy && place.links && (
-                    <div className="flex gap-2 mb-2">
-                      {place.links.map((link, lIdx) => (
-                        link.type === 'image' ? (
-                          <button 
-                            key={lIdx}
-                            onClick={() => setPreviewImage(link.url)}
-                            className="flex-1 bg-white border border-orange-200 text-orange-700 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 shadow-sm hover:bg-orange-50 transition-colors"
-                          >
-                            <ImageIcon size={16} /> {link.text}
-                          </button>
-                        ) : (
-                          <a 
-                            key={lIdx}
-                            href={link.url} target="_blank" rel="noopener noreferrer"
-                            className="flex-1 bg-orange-500 text-white py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 shadow-sm hover:bg-orange-600 transition-colors"
-                          >
-                            <FileText size={16} /> {link.text}
-                          </a>
-                        )
-                      ))}
-                    </div>
-                  )}
-
-                  {!isStrategy && (
-                    <div className="flex items-center gap-2 text-sm text-[#A39D78] font-medium mb-4">
-                      <Clock size={16} />
-                      <span>{place.duration}</span>
-                    </div>
-                  )}
-
-                  {!isStrategy && place.photoTips && (
-                    <div className="bg-blue-50/50 rounded-xl p-3 mb-4 border border-blue-100/50">
-                      <div className="flex items-center gap-1.5 text-blue-700 font-medium text-sm mb-1">
-                        <Camera size={16} />
-                        <span>拍照小技巧</span>
-                      </div>
-                      <p className="text-blue-800/80 text-sm leading-snug">{place.photoTips}</p>
-                    </div>
-                  )}
-
-                  {!isStrategy && aiTips[place.name] && (
-                    <div className="bg-purple-50/70 rounded-xl p-3 mb-4 border border-purple-100 relative group">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-1.5 text-[#773690] font-bold text-sm">
-                          ✨ AI 景點小助手
-                        </div>
-                        <button 
-                          onClick={() => handleAiExplore(place.name, place.type, true)}
-                          disabled={loadingTips[place.name]}
-                          className="text-[#773690]/60 hover:text-[#773690] transition-colors p-1"
-                          title="換個建議"
-                        >
-                          <RefreshCw size={14} className={loadingTips[place.name] ? 'animate-spin' : ''} />
+                          <MoreVertical size={20} />
                         </button>
-                      </div>
-                      <p className="text-purple-900/80 text-sm leading-relaxed">{aiTips[place.name]}</p>
-                    </div>
-                  )}
 
-                  {/* 一般模式：導覽與 AI 探索按鈕 */}
-                  {!isStrategy && !isEditMode && (
-                    <div className="flex gap-2 pt-2 border-t border-gray-50 flex-wrap">
-                      <a 
-                        href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(place.name)}`}
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="flex-1 flex items-center justify-center gap-1.5 bg-[#FAF9F6] hover:bg-[#A39D78]/10 text-gray-700 py-2 rounded-xl text-sm font-medium transition-colors min-w-[30%]"
-                      >
-                        <Navigation size={16} className="text-[#A39D78]" />
-                        單點導航
-                      </a>
-                      <button 
-                        onClick={() => handleAiExplore(place.name, place.type)}
-                        disabled={loadingTips[place.name]}
-                        className="flex-1 flex items-center justify-center gap-1.5 bg-[#773690]/5 hover:bg-[#773690]/10 text-[#773690] py-2 rounded-xl text-sm font-bold transition-colors min-w-[30%] disabled:opacity-50"
-                      >
-                        {loadingTips[place.name] && !aiTips[place.name] ? <Loader2 size={16} className="animate-spin" /> : '✨ 探索'}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* 編輯模式：專屬底部編輯控制列 (防呆刪除機制 + 加大觸控範圍) */}
-                  {/* 【修復 1】：確保所有卡片 (包含攻略卡片) 在編輯模式下都會顯示這組控制列 */}
-                  {isEditMode && (
-                    <div className={`flex items-center justify-between mt-4 pt-3 border-t ${isStrategy ? 'border-orange-200' : 'border-purple-100/50'}`}>
-                      <div className="flex gap-2">
-                        <button onClick={() => movePlace(idx, -1)} disabled={idx === 0} className="p-2.5 rounded-xl bg-white text-gray-500 hover:bg-gray-100 border border-gray-200 shadow-sm disabled:opacity-30"><ChevronUp size={18}/></button>
-                        <button onClick={() => movePlace(idx, 1)} disabled={idx === currentDay.places.length - 1} className="p-2.5 rounded-xl bg-white text-gray-500 hover:bg-gray-100 border border-gray-200 shadow-sm disabled:opacity-30"><ChevronDown size={18}/></button>
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => openEditModal(idx, place)} className="p-2.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 shadow-sm border border-blue-100"><Pencil size={18}/></button>
-                        <button onClick={() => duplicatePlace(idx)} className="p-2.5 rounded-xl bg-green-50 text-green-600 hover:bg-green-100 shadow-sm border border-green-100"><Copy size={18}/></button>
-                        {confirmDeleteIdx === idx ? (
-                          <button onClick={() => deletePlace(idx)} className="px-3 py-2.5 rounded-xl bg-red-500 text-white font-bold text-xs hover:bg-red-600 shadow-sm flex items-center gap-1.5 animate-in slide-in-from-right-2">
-                            <Trash2 size={14}/> 確定刪除?
-                          </button>
-                        ) : (
-                          <button onClick={() => setConfirmDeleteIdx(idx)} className="p-2.5 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 shadow-sm border border-red-100"><Trash2 size={18}/></button>
+                        {activeMenuIdx === idx && (
+                          <>
+                            {/* 隱形遮罩，點擊外面關閉選單 */}
+                            <div className="fixed inset-0 z-[110]" onClick={() => setActiveMenuIdx(null)}></div>
+                            <div className="absolute right-0 top-8 w-36 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-[120] animate-in fade-in zoom-in-95 duration-200">
+                              <button onClick={() => { openEditModal(idx, place); setActiveMenuIdx(null); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Pencil size={14}/> 編輯卡片</button>
+                              <button onClick={() => { duplicatePlace(idx); setActiveMenuIdx(null); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Copy size={14}/> 複製行程</button>
+                              <div className="h-px bg-gray-100 my-1"></div>
+                              <button onClick={() => { movePlace(idx, -1); setActiveMenuIdx(null); }} disabled={idx === 0} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-30 flex items-center gap-2"><ChevronUp size={14}/> 往上移</button>
+                              <button onClick={() => { movePlace(idx, 1); setActiveMenuIdx(null); }} disabled={idx === currentDay.places.length - 1} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-30 flex items-center gap-2"><ChevronDown size={14}/> 往下移</button>
+                              <div className="h-px bg-gray-100 my-1"></div>
+                              {confirmDeleteIdx === idx ? (
+                                 <button onClick={() => { deletePlace(idx); setActiveMenuIdx(null); }} className="w-full text-left px-4 py-2 text-sm text-red-600 font-bold hover:bg-red-50 flex items-center gap-2 bg-red-50/50"><Trash2 size={14}/> 確定刪除?</button>
+                              ) : (
+                                 <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteIdx(idx); }} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2"><Trash2 size={14}/> 刪除卡片</button>
+                              )}
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>
-                  )}
 
+                    {!isStrategy && place.openHours && (
+                      <div className="inline-flex items-center gap-1.5 bg-blue-50/80 text-blue-700 px-3 py-1.5 rounded-xl text-[13px] font-bold border border-blue-100/50 mb-3 shadow-sm">
+                        <Clock size={14} className="text-blue-600" />
+                        開放時間 {place.openHours}
+                      </div>
+                    )}
+
+                    {!isStrategy && place.bookingInfo && (
+                      <div className="inline-flex items-center gap-1.5 bg-teal-50/80 text-teal-700 px-3 py-1.5 rounded-xl text-[13px] font-bold border border-teal-100/50 mb-3 shadow-sm">
+                        <CheckCheck size={14} className="text-teal-600" />
+                        {place.bookingInfo}
+                      </div>
+                    )}
+                    
+                    {place.badges && place.badges.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {place.badges.map((badge, bIdx) => (
+                          <span key={bIdx} className={`text-xs px-2.5 py-1 rounded-full font-medium ${getBadgeStyle(badge)}`}>
+                            {badge}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <p className="text-gray-600 text-sm mb-4 leading-relaxed whitespace-pre-wrap">{place.description}</p>
+                    
+                    {!isStrategy && place.goshuins && (
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {place.goshuins.map((gs, gIdx) => (
+                          <div key={gIdx} className="inline-flex items-center gap-1.5 bg-[#773690]/10 text-[#773690] px-2.5 py-1.5 rounded-xl text-xs font-bold border border-[#773690]/20 shadow-sm">
+                            <span className="text-sm">⛩️</span>
+                            <span>御朱印 ({gs.name})</span>
+                            <span className="ml-0.5 bg-white px-1.5 py-0.5 rounded-md text-[10px] text-[#773690] shadow-sm">{gs.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {!isStrategy && place.gojoins && (
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {place.gojoins.map((gj, gIdx) => (
+                          <div key={gIdx} className="inline-flex items-center gap-1.5 bg-slate-700 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold border border-slate-600 shadow-sm">
+                            <span className="text-sm">🏯</span>
+                            <span>{gj.name}</span>
+                            <span className="ml-0.5 bg-slate-800 px-1.5 py-0.5 rounded-md text-[10px] text-slate-200">{gj.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {place.extraImages && (
+                      <div className={`flex gap-3 mb-4 overflow-x-auto hide-scrollbar pb-2 ${isStrategy ? '' : 'mt-2'}`}>
+                        {place.extraImages.map((img, iIdx) => (
+                          <div 
+                            key={iIdx} 
+                            onClick={() => setPreviewImage(img.url)}
+                            className={`relative flex-shrink-0 w-28 h-20 rounded-xl overflow-hidden shadow-sm cursor-pointer group border ${isStrategy ? 'border-orange-200' : 'border-gray-200'}`}
+                          >
+                            <img src={img.url} alt={img.title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" />
+                            <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <ZoomIn size={16} className="text-white mb-1" />
+                              <span className="text-[10px] text-white font-bold">{img.title}</span>
+                            </div>
+                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 pt-4">
+                              <p className="text-[10px] text-white font-bold truncate group-hover:opacity-0 transition-opacity">{img.title}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {isStrategy && place.links && (
+                      <div className="flex gap-2 mb-2">
+                        {place.links.map((link, lIdx) => (
+                          link.type === 'image' ? (
+                            <button 
+                              key={lIdx}
+                              onClick={() => setPreviewImage(link.url)}
+                              className="flex-1 bg-white border border-orange-200 text-orange-700 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 shadow-sm hover:bg-orange-50 transition-colors"
+                            >
+                              <ImageIcon size={16} /> {link.text}
+                            </button>
+                          ) : (
+                            <a 
+                              key={lIdx}
+                              href={link.url} target="_blank" rel="noopener noreferrer"
+                              className="flex-1 bg-orange-500 text-white py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 shadow-sm hover:bg-orange-600 transition-colors"
+                            >
+                              <FileText size={16} /> {link.text}
+                            </a>
+                          )
+                        ))}
+                      </div>
+                    )}
+
+                    {!isStrategy && (
+                      <div className="flex items-center gap-2 text-sm text-[#A39D78] font-medium mb-4">
+                        <Clock size={16} />
+                        <span>{place.duration}</span>
+                      </div>
+                    )}
+
+                    {!isStrategy && place.photoTips && (
+                      <div className="bg-blue-50/50 rounded-xl p-3 mb-4 border border-blue-100/50">
+                        <div className="flex items-center gap-1.5 text-blue-700 font-medium text-sm mb-1">
+                          <Camera size={16} />
+                          <span>拍照小技巧</span>
+                        </div>
+                        <p className="text-blue-800/80 text-sm leading-snug">{place.photoTips}</p>
+                      </div>
+                    )}
+
+                    {!isStrategy && aiTips[place.name] && (
+                      <div className="bg-purple-50/70 rounded-xl p-3 mb-4 border border-purple-100 relative group">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5 text-[#773690] font-bold text-sm">
+                            ✨ AI 景點小助手
+                          </div>
+                          <button 
+                            onClick={() => handleAiExplore(place.name, place.type, true)}
+                            disabled={loadingTips[place.name]}
+                            className="text-[#773690]/60 hover:text-[#773690] transition-colors p-1"
+                            title="換個建議"
+                          >
+                            <RefreshCw size={14} className={loadingTips[place.name] ? 'animate-spin' : ''} />
+                          </button>
+                        </div>
+                        <p className="text-purple-900/80 text-sm leading-relaxed">{aiTips[place.name]}</p>
+                      </div>
+                    )}
+
+                    {/* 一般模式：導覽與 AI 探索按鈕 */}
+                    {!isStrategy && (
+                      <div className="flex gap-2 pt-2 border-t border-gray-50 flex-wrap">
+                        <a 
+                          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(place.name)}`}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="flex-1 flex items-center justify-center gap-1.5 bg-[#FAF9F6] hover:bg-[#A39D78]/10 text-gray-700 py-2 rounded-xl text-sm font-medium transition-colors min-w-[30%]"
+                        >
+                          <Navigation size={16} className="text-[#A39D78]" />
+                          單點導航
+                        </a>
+                        <button 
+                          onClick={() => handleAiExplore(place.name, place.type)}
+                          disabled={loadingTips[place.name]}
+                          className="flex-1 flex items-center justify-center gap-1.5 bg-[#773690]/5 hover:bg-[#773690]/10 text-[#773690] py-2 rounded-xl text-sm font-bold transition-colors min-w-[30%] disabled:opacity-50"
+                        >
+                          {loadingTips[place.name] && !aiTips[place.name] ? <Loader2 size={16} className="animate-spin" /> : '✨ 探索'}
+                        </button>
+                      </div>
+                    )}
+
+                  </div>
                 </div>
-              </div>
+
+                {/* 在每張卡片的下方插入 (這會自動成為下一張卡片的上方) */}
+                <InlineAddButton insertIdx={idx + 1} />
+              </React.Fragment>
             );
           })}
-          
-          {/* 編輯模式下的大按鈕：新增行程 */}
-          {isEditMode && (
-            <div className="relative flex items-center justify-center gap-4 z-0 mt-4">
-              <button 
-                onClick={() => openEditModal()}
-                className="w-full bg-white border-2 border-dashed border-purple-200 text-[#773690] py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-purple-50 transition-colors shadow-sm"
-              >
-                <Plus size={20} /> 新增行程卡片
-              </button>
-            </div>
-          )}
         </div>
 
         {/* AI Daily Journal Generator UI */}
@@ -1126,7 +1144,7 @@ const ItineraryView = ({
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="bg-[#773690] text-white p-4 flex justify-between items-center flex-shrink-0">
               <h3 className="font-bold">{editModal.placeIdx !== null ? '編輯行程卡片' : '新增行程卡片'}</h3>
-              <button onClick={() => setEditModal({ isOpen: false, placeIdx: null, data: null })} className="bg-white/20 hover:bg-white/30 rounded-full p-1.5 transition-colors">
+              <button onClick={() => setEditModal({ isOpen: false, placeIdx: null, insertIdx: null, data: null })} className="bg-white/20 hover:bg-white/30 rounded-full p-1.5 transition-colors">
                 <X size={18} />
               </button>
             </div>
@@ -1184,7 +1202,6 @@ const ItineraryView = ({
                 </div>
               </div>
 
-              {/* 【修復 2】：補上客製化資訊的編輯欄位 */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-blue-600 mb-1.5">開放時間 (選填)</label>
