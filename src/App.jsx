@@ -155,7 +155,7 @@ const fetchDynamicWeather = async (retries = 3) => {
 // --- MOCK DATA ---
 const mockData = {
   "tripInfo": {
-    "title": "✨ 我的專屬名古屋 6 天 5 夜放鬆之旅 ✨",
+    "title": "名古屋6天5夜放鬆之旅 ✈️",
     "dates": "2026/04/21 - 2026/04/26",
     "themeColor": "#773690",
     "accentColor": "#A39D78"
