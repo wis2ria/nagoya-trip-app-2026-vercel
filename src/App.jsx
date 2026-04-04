@@ -31,7 +31,7 @@ try {
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- GEMINI API SETUP ---
-const apiKey = ""; 
+const apiKey = "AIzaSyCur4ftJI6cQ_0HTjfkFd1lfKfH8dLQHwE"; 
 const callGeminiAPI = async (prompt, retries = 5) => {
   const delays = [1000, 2000, 4000, 8000, 16000];
   for (let i = 0; i <= retries; i++) {
