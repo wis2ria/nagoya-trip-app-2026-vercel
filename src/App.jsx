@@ -565,7 +565,7 @@ const ItineraryView = ({
   };
 
   const mapQueryName = currentDay.mapKeyword || currentDay.places.find(p => ['景點', '活動', '購物'].includes(p.type))?.name || currentDay.places[0]?.name || "名古屋車站";
-  const mapEmbedUrl = `http://googleusercontent.com/maps.google.com/4{encodeURIComponent(mapQueryName)}&t=&z=13&ie=UTF8&iwloc=&output=embed`;
+  const mapEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(mapQueryName)}&t=&z=13&ie=UTF8&iwloc=&output=embed`;
 
   const InlineAddButton = ({ insertIdx }) => (
     <div className="relative flex items-center z-10 group cursor-pointer -my-2" onClick={() => openEditModal(null, null, insertIdx)}>
