@@ -19,6 +19,7 @@ try {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     firebaseConfig = JSON.parse(__firebase_config);
   }
+  
   if (Object.keys(firebaseConfig).length > 0) {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
@@ -31,30 +32,23 @@ try {
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- GEMINI API SETUP (多模型自動備援系統) ---
-const USER_API_KEY = import.meta.env.VITE_GEMINI_API_KEY; // 強制更新金鑰
+const USER_API_KEY = ""; 
 
-// 統一的智慧型 Fetch 函數，自動切換不同模型與環境，徹底防 404 當機
+// 【修正重點 1】統一的智慧型 Fetch 函數，自動切換不同模型與環境，徹底防 404 當機
 const fetchGemini = async (prompt, useJson = false, retries = 3) => {
   const delays = [1000, 2000, 4000, 8000];
   
-  // 準備一系列備援模型清單
   const envConfigs = [
-    { name: 'gemini-1.5-flash', key: USER_API_KEY },
-    { name: 'gemini-1.5-flash-latest', key: USER_API_KEY },
-    { name: 'gemini-1.5-pro', key: USER_API_KEY },
-    { name: 'gemini-pro', key: USER_API_KEY }
-    // 移除了原本沒有 key 的預覽環境，避免觸發錯誤
+    { name: 'gemini-2.5-flash-preview-09-2025', key: USER_API_KEY }
   ];
 
   for (let i = 0; i <= retries; i++) {
     for (const config of envConfigs) {
-      if (!config.key) continue; // 防呆機制：如果沒有金鑰就直接跳過這個模型
-      
       try {
         const isGemini1_0 = config.name === 'gemini-pro';
         const reqBody = { contents: [{ parts: [{ text: prompt }] }] };
         
-        // 只有較新的模型才強制使用 JSON 模式
+        // Gemini 1.0 不支援強制的 json 模式，因此若 fallback 到 1.0 需略過此設定
         if (useJson && !isGemini1_0) {
           reqBody.generationConfig = { responseMimeType: "application/json" };
         }
@@ -65,23 +59,25 @@ const fetchGemini = async (prompt, useJson = false, retries = 3) => {
           body: JSON.stringify(reqBody)
         });
 
-        if (!response.ok) continue; // 如果報錯，無縫切換下一個模型試試看
+        if (!response.ok) {
+          continue; 
+        }
         
         const data = await response.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return text;
         
       } catch (error) {
+        // 發生網路錯誤，繼續嘗試下一個
         continue;
       }
     }
-    // 等待幾秒後再重試
+    // 如果這輪所有模型都失敗，等待幾秒後再重試
     if (i < retries) await new Promise(res => setTimeout(res, delays[i]));
   }
   throw new Error("所有 AI 模型嘗試皆失敗");
 };
 
-// 呼叫 API 的包裝函式保持不變
 const callGeminiAPI = async (prompt) => {
   try {
     const text = await fetchGemini(prompt, false, 4);
@@ -92,10 +88,11 @@ const callGeminiAPI = async (prompt) => {
 };
 
 const callGeminiTTS = async (text) => {
+  // 強制使用裝置內建語音引擎，確保發音功能穩定不超時
   return null; 
 };
 
-// 強化版的天氣資料擷取，不會因為 AI 多講廢話而當機
+// 【修正重點 2】強化版 JSON 解析 (天氣)
 const fetchDynamicWeather = async () => {
   const prompt = `請以 JSON 格式預測日本名古屋 2026/04/21 到 2026/04/26 的天氣與動態穿著建議。
 回傳一個 JSON 陣列，包含 6 天的資料。
@@ -103,19 +100,21 @@ const fetchDynamicWeather = async () => {
 [{"day": "4/21", "weekday": "二", "temp": "15° / 22°", "condition": "Sunny", "desc": "晴朗舒適", "clothingHint": "薄長袖加上休閒外套"}]`;
   try {
     const text = await fetchGemini(prompt, true, 2);
-    // 使用正則表達式，強制只抓取中括號 [ 與 ] 之間的內容 (也就是 JSON 陣列)
+    // 使用正則表達式，強制只擷取 [ 與 ] 之間的內容（包含中括號）
     const match = text.match(/\[[\s\S]*\]/);
     if (match) {
       return JSON.parse(match[0]);
     }
     return null;
   } catch (error) {
-    console.error("天氣解析失敗，將使用預設資料:", error);
+    console.warn("天氣解析失敗，將使用備用資料:", error);
     return null;
   }
 };
 
 // --- MOCK DATA ---
+const generateId = () => Math.random().toString(36).substr(2, 9); // 生成簡單的隨機 ID
+
 const mockData = {
   "tripInfo": {
     "title": "✈️ 名古屋6天5夜放鬆之旅",
@@ -140,6 +139,7 @@ const mockData = {
       "mapKeyword": "名古屋車站",
       "places": [
         {
+          "id": generateId(),
           "type": "攻略", 
           "name": "🎫 機場出關 & μ-SKY 搭乘攻略", 
           "description": "• 出關動線：第 1 航廈入境 (2F) ➔ 往「交通廣場」 ➔ 左轉見名鐵剪票口與售票處。\n• 購票須知：搭乘 μ-SKY 需額外加購 ¥450「μ-ticket (特別車輛券)」。建議連同基本車票、回程 μ-ticket 一併買好。\n• 進站方式：刷 IC 卡或將基本乘車券投入閘門進站。μ-ticket 不用過閘門，上車後插在前方座位票夾供驗票。\n• 乘車月台：1 號月台", 
@@ -150,6 +150,7 @@ const mockData = {
           ]
         },
         {
+          "id": generateId(),
           "type": "交通", 
           "name": "搭乘 μ-SKY 前往市區", 
           "description": "搭乘 17:55 抵達的班機。辦理入境手續後，搭乘名鐵特急（μ-SKY）直達名鐵名古屋站。", 
@@ -157,6 +158,7 @@ const mockData = {
           "badges": ["交通"]
         },
         {
+          "id": generateId(),
           "type": "活動", 
           "name": "🚶 車站穿越戰略：往新幹線口", 
           "description": "從名鐵名古屋站出站後，請一路跟著「新幹線」或「太閤通口」的指標走。\n穿過 JR 名古屋站的中央穿堂，一直走到穿堂盡頭（看到銀之鐘），走出去才是飯店所在的西側區域！", 
@@ -164,6 +166,7 @@ const mockData = {
           "badges": ["步行", "迷宮破解"]
         },
         {
+          "id": generateId(),
           "type": "酒店", 
           "name": "名鉄イン名古屋駅新幹線口", 
           "description": "辦理入住並放下行李。先讓自己安頓下來，準備迎接明天的早起行程。", 
@@ -172,6 +175,7 @@ const mockData = {
           "bookingInfo": "Agoda / 預訂編號：1712328365"
         },
         {
+          "id": generateId(),
           "type": "食物", 
           "name": "車站周邊輕鬆晚餐", 
           "description": "在名古屋車站共構的地下街或商場找間喜歡的餐廳簡單吃個晚餐，早點休息。", 
@@ -187,18 +191,10 @@ const mockData = {
       "clothingHint": "防風外套＋保暖內搭",
       "mapKeyword": "白川鄉合掌村",
       "places": [
-        {
-          "type": "交通", "name": "JR名古屋站西口 Esca 地下街集合", "description": "08:15 集合，尋找接待處報到，08:30 準時搭乘專用巴士出發。", "duration": "準時抵達", "badges": ["注意時間"]
-        },
-        {
-          "type": "景點", "name": "飛驒高山 (小京都)", "description": "在充滿江戶時代風情的老街自由散步，午餐自理。", "duration": "約 120 分鐘", "badges": ["必吃"]
-        },
-        {
-          "type": "景點", "name": "白川鄉合掌村", "description": "漫步於世界遺產合掌造村落，感受童話般的寧靜氛圍。", "duration": "約 90 分鐘", "badges": ["必拍"]
-        },
-        {
-          "type": "酒店", "name": "富山 Manten 飯店", "description": "晚上入住設有大型公共浴場的飯店，洗去一天的疲憊。晚餐需在飯店內或附近餐廳自理。", "duration": "過夜", "badges": ["放鬆"]
-        }
+        { "id": generateId(), "type": "交通", "name": "JR名古屋站西口 Esca 地下街集合", "description": "08:15 集合，尋找接待處報到，08:30 準時搭乘專用巴士出發。", "duration": "準時抵達", "badges": ["注意時間"] },
+        { "id": generateId(), "type": "景點", "name": "飛驒高山 (小京都)", "description": "在充滿江戶時代風情的老街自由散步，午餐自理。", "duration": "約 120 分鐘", "badges": ["必吃"] },
+        { "id": generateId(), "type": "景點", "name": "白川鄉合掌村", "description": "漫步於世界遺產合掌造村落，感受童話般的寧靜氛圍。", "duration": "約 90 分鐘", "badges": ["必拍"] },
+        { "id": generateId(), "type": "酒店", "name": "富山 Manten 飯店", "description": "晚上入住設有大型公共浴場的飯店，洗去一天的疲憊。晚餐需在飯店內或附近餐廳自理。", "duration": "過夜", "badges": ["放鬆"] }
       ]
     },
     {
@@ -208,21 +204,11 @@ const mockData = {
       "clothingHint": "厚羽絨衣＋防滑雪靴＋毛帽墨鏡",
       "mapKeyword": "立山黑部 阿爾卑斯路線",
       "places": [
-        {
-          "type": "活動", "name": "立山黑部阿爾卑斯山脈路線", "description": "飯店早餐後出發。連續轉乘立山纜車、高原巴士抵達海拔 2450m 的室堂站。", "duration": "上午", "badges": ["交通體驗"]
-        },
-        {
-          "type": "景點", "name": "大雪谷 (雪之大谷) 漫步", "description": "阿爾卑斯路線的最高潮！親自走在期間限定的巨大雪牆之間。", "duration": "約 1-2 小時", "badges": ["必拍", "絕景"]
-        },
-        {
-          "type": "景點", "name": "黑部水壩", "description": "轉乘隧道電動巴士與纜車，從黑部湖步行參觀壯觀的黑部水壩。", "duration": "下午", "badges": ["景點"]
-        },
-        {
-          "type": "交通", "name": "返回名古屋站", "description": "從扇澤站換乘專用巴士，預計 18:30 返抵名古屋站，結束豐富的兩天一夜行程。", "duration": "傍晚", "badges": []
-        },
-        {
-          "type": "酒店", "name": "名鉄イン名古屋駅新幹線口", "description": "結束兩天一夜的立山黑部行程，回到熟悉的飯店辦理入住並好好休息。", "duration": "Check-in", "badges": [], "bookingInfo": "Trip.com / 預訂編號：1688896815519009"
-        }
+        { "id": generateId(), "type": "活動", "name": "立山黑部阿爾卑斯山脈路線", "description": "飯店早餐後出發。連續轉乘立山纜車、高原巴士抵達海拔 2450m 的室堂站。", "duration": "上午", "badges": ["交通體驗"] },
+        { "id": generateId(), "type": "景點", "name": "大雪谷 (雪之大谷) 漫步", "description": "阿爾卑斯路線的最高潮！親自走在期間限定的巨大雪牆之間。", "duration": "約 1-2 小時", "badges": ["必拍", "絕景"] },
+        { "id": generateId(), "type": "景點", "name": "黑部水壩", "description": "轉乘隧道電動巴士與纜車，從黑部湖步行參觀壯觀的黑部水壩。", "duration": "下午", "badges": ["景點"] },
+        { "id": generateId(), "type": "交通", "name": "返回名古屋站", "description": "從扇澤站換乘專用巴士，預計 18:30 返抵名古屋站，結束豐富的兩天一夜行程。", "duration": "傍晚", "badges": [] },
+        { "id": generateId(), "type": "酒店", "name": "名鉄イン名古屋駅新幹線口", "description": "結束兩天一夜的立山黑部行程，回到熟悉的飯店辦理入住並好好休息。", "duration": "Check-in", "badges": [], "bookingInfo": "Trip.com / 預訂編號：1688896815519009" }
       ]
     },
     {
@@ -233,52 +219,20 @@ const mockData = {
       "parkMapUrl": "https://jioujiou.tw/wp-content/uploads/2025/05/吉卜力公園地圖-1.jpg",
       "mapKeyword": "吉卜力公園",
       "places": [
-        {
-           "type": "交通", "name": "出發與步行", "duration": "08:00", "description": "從你下榻的「名鉄イン名古屋駅新幹線口」出發。由於飯店在車站西口，而地鐵東山線在偏東側的地下，請預留約 10 到 15 分鐘的步行時間穿越名古屋車站。", "badges": ["注意時間", "交通"]
-        },
-        {
-           "type": "交通", "name": "【去程】地鐵 + Linimo", "duration": "08:33 - 09:28", "description": "車資共 670 円。\n• 08:33 搭乘 名古屋市營地鐵東山線（往藤丘方向）。\n• 09:01 抵達 藤丘站，跟著指標前往轉乘 Linimo。\n• 09:08 搭乘 Linimo（往八草方向）。\n• 09:21 抵達 愛·地球博紀念公園站。\n• 步行約 7 分鐘，於 09:28 抵達吉卜力公園。", "badges": ["交通", "乘換1回"]
-        },
-        {
-           "type": "活動", "name": "入園與移動", "duration": "09:28 - 09:45", "description": "出站後，直接穿越戶外的電梯塔，沿著指標往最深處的「魔女之谷 (Valley of Witches)」入口前進。這段路程大約需要 10 到 15 分鐘。", "badges": ["步行"]
-        },
-        {
-           "type": "活動", "name": "魔女之谷門口待命", "duration": "09:45 - 10:00", "description": "平日園區 10:00 開門，此時抵達剛好可以跟著排隊人潮，準備成為第一批進入魔女之谷的遊客。", "badges": ["重要", "準備入園"]
-        },
-        {
-           "type": "購物", "name": "魔女之谷：領取兌換券", "duration": "10:00", "description": "一進入魔女之谷，立刻鎖定「售票車 (Ticket Truck)」，領取《霍爾的移動城堡》的購票兌換券！拿到後就可以安心前往大倉庫準備 11:00 的入場了。", "badges": ["必搶", "重要"]
-        },
-        {
-           "type": "活動", "name": "移動至大倉庫", "duration": "10:30 - 10:45", "description": "帶著兌換券離開魔女之谷，悠閒散步前往「吉卜力大倉庫」門口排隊，準備迎接 11:00 的專屬入場時段。", "badges": ["注意時間"]
-        },
-        {
-           "type": "景點", "name": "吉卜力大倉庫", "duration": "11:00 - 13:30", "description": "準時驗票入場。這兩個半小時完全專注於館內設施：直奔最熱門的「吉卜力動畫人物名場面展」拍無臉男車廂，參觀天空之城機器人兵、借物少女房間，並在「冒險飛行團」商店採買限定紀念品。這段時間完全不安排大倉庫內的餐飲排隊。", "badges": ["必拍", "必買"]
-        },
-        {
-           "type": "食物", "name": "魔女之谷：飛天烤箱午餐", "duration": "13:30 - 14:30", "description": "離開大倉庫，重返魔女之谷。直奔「飛天烤箱」餐廳。此時剛好避開正午最尖峰人潮。點招牌肉餡派或魔女風鹹派。備案：若人潮繞好多圈，果斷放棄！轉往熱狗攤或「古德喬麵包店」，坐長椅吃，把時間省下來給霍爾的城堡。", "badges": ["必吃", "備案提醒"]
-        },
-        {
-           "type": "景點", "name": "魔女之谷：進入霍爾城堡", "duration": "14:30 - 15:30", "description": "帶著早上的兌換券回到售票車，支付 ¥1,000 購買實體「當日入場券」。正式走進《霍爾的移動城堡》內部，親眼見證火惡魔卡西法的暖爐！參觀完後逛逛「13 魔女」商店或拍攝城堡噴煙外觀。", "badges": ["必拍", "絕景"]
-        },
-        {
-           "type": "景點", "name": "魔法之里", "duration": "15:30 - 16:15", "description": "順路前往旁邊的「魔法之里」，看一眼巨大的乙事主溜滑梯與充滿日式風情的達達拉城，感受與魔女之谷截然不同的氛圍。", "badges": ["景點"]
-        },
-        {
-           "type": "景點", "name": "青春之丘", "duration": "16:15 - 17:00", "description": "慢慢往園區出口的方向移動，傍晚時分來到靠近入口處的「青春之丘」。拍下《心之谷》中充滿復古風情的地球屋建築，在夕陽餘暉中為這趟吉卜力魔法之旅畫下完美的句點。", "badges": ["放鬆", "必拍"]
-        },
-        {
-           "type": "交通", "name": "吉卜力公園 ➔ 榮商圈", "duration": "17:00 之後", "description": "從吉卜力公園搭乘 Linimo 回到地鐵「藤丘站」後，直接轉乘地鐵東山線就可以直達「榮 (Sakae)」站。不需要繞回名古屋車站，非常順路！", "badges": ["交通", "順路"]
-        },
-        {
-          "type": "購物",
-          "name": "綠洲 21 (Oasis 21) & 榮商圈",
-          "description": "傍晚抵達市區，在榮商圈一帶吃晚餐。可以在宇宙船造型的玻璃屋頂上散步，欣賞名古屋電視塔夜景。\n\n🕒 開館時間：\n• 銀河廣場 6:00～23:00 (夜間亮燈 日落～23:00)\n• 水的宇宙船 10:00～21:00\n• 商店 10:00～21:00\n• 餐廳 10:00～22:00\n• 服務店 10:00～20:00",
-          "duration": "晚上",
-          "badges": ["必買", "放鬆"]
-        },
-        {
-          "type": "交通", "name": "榮站 ➔ 名古屋站", "description": "抵達後，再次穿過名古屋車站的中央穿堂（櫻通口往太閣通口方向），步行約 10 分鐘回到位於西口的「名鉄イン名古屋駅新幹線口」休息。", "duration": "晚上", "badges": ["交通", "步行"]
-        }
+        { "id": generateId(), "type": "交通", "name": "出發與步行", "duration": "08:00", "description": "從你下榻的「名鉄イン名古屋駅新幹線口」出發。由於飯店在車站西口，而地鐵東山線在偏東側的地下，請預留約 10 到 15 分鐘的步行時間穿越名古屋車站。", "badges": ["注意時間", "交通"] },
+        { "id": generateId(), "type": "交通", "name": "【去程】地鐵 + Linimo", "duration": "08:33 - 09:28", "description": "車資共 670 円。\n• 08:33 搭乘 名古屋市營地鐵東山線（往藤丘方向）。\n• 09:01 抵達 藤丘站，跟著指標前往轉乘 Linimo。\n• 09:08 搭乘 Linimo（往八草方向）。\n• 09:21 抵達 愛·地球博紀念公園站。\n• 步行約 7 分鐘，於 09:28 抵達吉卜力公園。", "badges": ["交通", "乘換1回"] },
+        { "id": generateId(), "type": "活動", "name": "入園與移動", "duration": "09:28 - 09:45", "description": "出站後，直接穿越戶外的電梯塔，沿著指標往最深處的「魔女之谷 (Valley of Witches)」入口前進。這段路程大約需要 10 到 15 分鐘。", "badges": ["步行"] },
+        { "id": generateId(), "type": "活動", "name": "魔女之谷門口待命", "duration": "09:45 - 10:00", "description": "平日園區 10:00 開門，此時抵達剛好可以跟著排隊人潮，準備成為第一批進入魔女之谷的遊客。", "badges": ["重要", "準備入園"] },
+        { "id": generateId(), "type": "購物", "name": "魔女之谷：領取兌換券", "duration": "10:00", "description": "一進入魔女之谷，立刻鎖定「售票車 (Ticket Truck)」領取《霍爾的移動城堡》購票兌換券！", "badges": ["必搶", "重要"] },
+        { "id": generateId(), "type": "活動", "name": "移動至大倉庫", "duration": "10:30 - 10:45", "description": "帶著兌換券離開魔女之谷，悠閒散步前往「吉卜力大倉庫」門口排隊，準備迎接 11:00 的專屬入場時段。", "badges": ["注意時間"] },
+        { "id": generateId(), "type": "景點", "name": "吉卜力大倉庫", "duration": "11:00 - 13:30", "description": "準時驗票入場。這兩個半小時完全專注於館內設施：直奔最熱門的「吉卜力動畫人物名場面展」拍無臉男車廂，參觀天空之城機器人兵、借物少女房間，並在「冒險飛行團」商店採買限定紀念品。", "badges": ["必拍", "必買"] },
+        { "id": generateId(), "type": "食物", "name": "魔女之谷：飛天烤箱午餐", "duration": "13:30 - 14:30", "description": "離開大倉庫，重返魔女之谷。直奔「飛天烤箱」餐廳。此時剛好避開正午最尖峰人潮。點招牌肉餡派或魔女風鹹派。", "badges": ["必吃", "備案提醒"] },
+        { "id": generateId(), "type": "景點", "name": "魔女之谷：進入霍爾城堡", "duration": "14:30 - 15:30", "description": "帶著早上的兌換券回到售票車，支付 ¥1,000 購買實體「當日入場券」。正式走進《霍爾的移動城堡》內部，親眼見證火惡魔卡西法的暖爐！", "badges": ["必拍", "絕景"] },
+        { "id": generateId(), "type": "景點", "name": "魔法之里", "duration": "15:30 - 16:15", "description": "順路前往旁邊的「魔法之里」，看一眼巨大的乙事主溜滑梯與充滿日式風情的達達拉城。", "badges": ["景點"] },
+        { "id": generateId(), "type": "景點", "name": "青春之丘", "duration": "16:15 - 17:00", "description": "慢慢往園區出口的方向移動，傍晚時分來到靠近入口處的「青春之丘」。", "badges": ["放鬆", "必拍"] },
+        { "id": generateId(), "type": "交通", "name": "吉卜力公園 ➔ 榮商圈", "duration": "17:00 之後", "description": "從吉卜力公園搭乘 Linimo 回到地鐵「藤丘站」後，直接轉乘地鐵東山線就可以直達「榮 (Sakae)」站。", "badges": ["交通", "順路"] },
+        { "id": generateId(), "type": "購物", "name": "綠洲 21 (Oasis 21) & 榮商圈", "description": "傍晚抵達市區，在榮商圈一帶吃晚餐。可以在宇宙船造型的玻璃屋頂上散步，欣賞名古屋電視塔夜景。", "duration": "晚上", "badges": ["必買", "放鬆"] },
+        { "id": generateId(), "type": "交通", "name": "榮站 ➔ 名古屋站", "description": "抵達後，再次穿過名古屋車站的中央穿堂（櫻通口往太閣通口方向），步行約 10 分鐘回到位於西口的飯店休息。", "duration": "晚上", "badges": ["交通", "步行"] }
       ]
     },
     {
@@ -296,58 +250,16 @@ const mockData = {
         ]
       },
       "places": [
-        {
-          "type": "交通", "name": "名鐵名古屋 → 犬山遊園", "description": "08:30 從飯店出發。08:46 於名鐵名古屋站 1 號月台搭車：\n① 排在地上「綠色線」中。\n② 確認前方「綠色牌子（往犬山）」。\n③ 電子看板找「綠色框框」的車（如往新鵜沼）。\n\n出站後尋找指標，沿著木曾川散步約 15 分鐘。", "duration": "08:30 - 09:15", "badges": ["注意時間", "交通"]
-        },
-        {
-          "type": "景點", "name": "三光稻荷神社 & 針綱神社", "description": "步行至天守閣途中的必經之地，人潮尚少。\n到「錢洗受付處」奉納 100 日圓，拿勺子舀神水清洗硬幣或紙鈔（建議放新台幣！），擦乾後放回錢包當作錢母祈求財運亨通。\n接著順著紅色鳥居往上，即可到達針綱神社拜殿。", "duration": "上午", "badges": ["必拍", "放鬆"],
-          "goshuins": [
-            { "name": "三光稲荷神社", "price": "500円" },
-            { "name": "猿田彦神社", "price": "500円" },
-            { "name": "針綱神社", "price": "500円" }
-          ]
-        },
-        {
-          "type": "景點", "name": "國寶犬山城天守閣", "description": "09:00 開門，此時抵達能完美避開 10:30 後的團體客！登上最頂層，享受木曾川微風並俯瞰城下町。", "duration": "09:30 - 11:00", "badges": ["絕景", "必拍"],
-          "gojoins": [
-            { "name": "御城印", "price": "300円" },
-            { "name": "專屬御城印帳", "price": "2400円" }
-          ],
-          "extraImages": [
-            { "title": "車站步行路線", "url": "https://inuyamajo.jp/wp-content/uploads/2020/03/route-from-station-en-1.png" },
-            { "title": "三條登山路線", "url": "https://inuyamajo.jp/wp-content/uploads/2020/03/three-routes-en-1.png" }
-          ]
-        },
-        {
-          "type": "食物", "name": "犬山城下町散策：山田五平餅店", "description": "這棟建築本身是日本登錄有形文化財。避開為了拍照大排長龍的鮮豔甜點，找個位子坐下，品嚐現點現烤、塗滿濃郁核桃芝麻味噌醬的傳統「五平餅」配上一杯熱茶，享受真正屬於老街的生活感。", "duration": "中午", "badges": ["必吃", "放鬆"]
-        },
-        {
-          "type": "交通", "name": "犬山 → 上前津", "description": "路線：犬山站 →（名鐵犬山線直通運轉）→ 上小田井站（系統切換點）→（地下鐵鶴舞線）→ 上前津站。\n免下車即可直達，非常順路方便！", "duration": "下午", "badges": ["交通", "順路"]
-        },
-        {
-          "type": "攻略", "name": "🎫 大須商店街攻略", "description": "準備進入名古屋最熱鬧的商店街！您可以搭配這份官方地圖，輕鬆找到想去的街道與店家。", "duration": "參考", "badges": ["實用地圖"],
-          "links": [
-            { "text": "大須官方地圖 (PDF)", "url": "https://osu.nagoya/images/osumap/01-02.pdf", "type": "pdf" }
-          ]
-        },
-        {
-          "type": "購物", "name": "大須商店街尋寶散策", "description": "從上前津站 8 號出口出發，建議的精華散步路線：\n新天地通 ➔ 巨大招財貓地標 ➔ 三輪神社 / 福光稲荷神社 ➔ 赤門通 ➔ 大須 3 丁目（裏大須）➔ 大須觀音通 ➔ 大須觀音寺\n\n沿途涵蓋平價藥妝、二手古著、次文化周邊與異國美食，盡情享受尋寶樂趣！", "duration": "下午", "badges": ["必買", "尋寶"]
-        },
-        {
-          "type": "景點", "name": "三輪神社", "openHours": "09:00 - 17:00", "description": "祭祀大物主神，神話中的「因幡白兔」被視為神祇使者，境內有大量兔子元素。\n以「結緣」知名，設有雕像「福兔」，據說摸摸福兔就能獲得幸福。", "duration": "傍晚", "badges": ["放鬆", "必拍"],
-          "goshuins": [
-            { "name": "三輪神社", "price": "400円" }
-          ]
-        },
-        {
-          "type": "景點", "name": "大須觀音寺", "openHours": "09:00 - 17:00", "description": "正式名稱為北野山真福寺寶生院，與淺草觀音、津觀音並列為日本三大觀音。", "duration": "傍晚", "badges": ["景點"],
-          "goshuins": [
-            { "name": "大須觀音寺", "price": "500円" }
-          ]
-        },
-        {
-          "type": "交通", "name": "大須觀音站 ➔ 名古屋站", "description": "搭乘地下鐵鶴舞線至「伏見站」，轉乘東山線回到「名古屋站」。出站後步行返回西口的新幹線口飯店休息。", "duration": "晚上", "badges": ["交通", "順路"]
-        }
+        { "id": generateId(), "type": "交通", "name": "名鐵名古屋 → 犬山遊園", "description": "08:30 從飯店出發。08:46 於名鐵名古屋站 1 號月台搭車。出站後尋找指標，沿著木曾川散步約 15 分鐘。", "duration": "08:30 - 09:15", "badges": ["注意時間", "交通"] },
+        { "id": generateId(), "type": "景點", "name": "三光稻荷神社 & 針綱神社", "description": "步行至天守閣途中的必經之地，人潮尚少。\n到「錢洗受付處」奉納 100 日圓，洗錢祈求財運。", "duration": "上午", "badges": ["必拍", "放鬆"], "goshuins": [{ "name": "三光稲荷神社", "price": "500円" }, { "name": "猿田彦神社", "price": "500円" }, { "name": "針綱神社", "price": "500円" }] },
+        { "id": generateId(), "type": "景點", "name": "國寶犬山城天守閣", "description": "09:00 開門，此時抵達能完美避開 10:30 後的團體客！登上最頂層，享受木曾川微風並俯瞰城下町。", "duration": "09:30 - 11:00", "badges": ["絕景", "必拍"], "gojoins": [{ "name": "御城印", "price": "300円" }, { "name": "專屬御城印帳", "price": "2400円" }], "extraImages": [{ "title": "車站步行路線", "url": "https://inuyamajo.jp/wp-content/uploads/2020/03/route-from-station-en-1.png" }, { "title": "三條登山路線", "url": "https://inuyamajo.jp/wp-content/uploads/2020/03/three-routes-en-1.png" }] },
+        { "id": generateId(), "type": "食物", "name": "犬山城下町散策：山田五平餅店", "description": "這棟建築本身是日本登錄有形文化財。品嚐現點現烤的傳統「五平餅」配上一杯熱茶。", "duration": "中午", "badges": ["必吃", "放鬆"] },
+        { "id": generateId(), "type": "交通", "name": "犬山 → 上前津", "description": "路線：犬山站 →（名鐵犬山線直通運轉）→ 上小田井站（系統切換點）→（地下鐵鶴舞線）→ 上前津站。免下車即可直達！", "duration": "下午", "badges": ["交通", "順路"] },
+        { "id": generateId(), "type": "攻略", "name": "🎫 大須商店街攻略", "description": "準備進入名古屋最熱鬧的商店街！您可以搭配這份官方地圖，輕鬆找到想去的街道與店家。", "duration": "參考", "badges": ["實用地圖"], "links": [{ "text": "大須官方地圖 (PDF)", "url": "https://osu.nagoya/images/osumap/01-02.pdf", "type": "pdf" }] },
+        { "id": generateId(), "type": "購物", "name": "大須商店街尋寶散策", "description": "從上前津站 8 號出口出發，建議的精華散步路線：\n新天地通 ➔ 巨大招財貓地標 ➔ 三輪神社 ➔ 赤門通 ➔ 大須觀音通 ➔ 大須觀音寺", "duration": "下午", "badges": ["必買", "尋寶"] },
+        { "id": generateId(), "type": "景點", "name": "三輪神社", "openHours": "09:00 - 17:00", "description": "祭祀大物主神，神話中的「因幡白兔」被視為神祇使者，境內有大量兔子元素。", "duration": "傍晚", "badges": ["放鬆", "必拍"], "goshuins": [{ "name": "三輪神社", "price": "400円" }] },
+        { "id": generateId(), "type": "景點", "name": "大須觀音寺", "openHours": "09:00 - 17:00", "description": "正式名稱為北野山真福寺寶生院，與淺草觀音、津觀音並列為日本三大觀音。", "duration": "傍晚", "badges": ["景點"], "goshuins": [{ "name": "大須觀音寺", "price": "500円" }] },
+        { "id": generateId(), "type": "交通", "name": "大須觀音站 ➔ 名古屋站", "description": "搭乘地下鐵鶴舞線至「伏見站」，轉乘東山線回到「名古屋站」。出站後步行返回飯店休息。", "duration": "晚上", "badges": ["交通", "順路"] }
       ]
     },
     {
@@ -357,12 +269,8 @@ const mockData = {
       "clothingHint": "輕鬆好活動的機場穿搭",
       "mapKeyword": "中部國際機場",
       "places": [
-        {
-          "type": "交通", "name": "前往中部國際機場", "description": "因為要搭乘 10:40 的早班機，建議 07:30 左右出發搭乘名鐵前往機場。", "duration": "約 40 分鐘", "badges": ["注意時間", "交通"]
-        },
-        {
-          "type": "購物", "name": "機場免稅店最後採買", "description": "抵達機場並完成報到手續後，把握時間在免稅店補齊伴手禮，帶著滿滿的回憶準備登機。", "duration": "約 1.5 小時", "badges": ["必買"]
-        }
+        { "id": generateId(), "type": "交通", "name": "前往中部國際機場", "description": "因為要搭乘 10:40 的早班機，建議 07:30 左右出發搭乘名鐵前往機場。", "duration": "約 40 分鐘", "badges": ["注意時間", "交通"] },
+        { "id": generateId(), "type": "購物", "name": "機場免稅店最後採買", "description": "抵達機場並完成報到手續後，把握時間在免稅店補齊伴手禮，帶著滿滿的回憶準備登機。", "duration": "約 1.5 小時", "badges": ["必買"] }
       ]
     }
   ]
@@ -475,8 +383,7 @@ const ItineraryView = ({
   const [journalStyle, setJournalStyle] = useState('活潑可愛');
   const [journalLength, setJournalLength] = useState('短 (約50字)');
 
-  // 📝 編輯模式狀態
-  const [isEditMode, setIsEditMode] = useState(false);
+  // 📝 編輯模式狀態 (移除 isEditMode)
   const [activeMenuIdx, setActiveMenuIdx] = useState(null); 
   const [editModal, setEditModal] = useState({ isOpen: false, placeIdx: null, insertIdx: null, data: null });
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState(null); 
@@ -509,7 +416,7 @@ const ItineraryView = ({
 請用繁體中文回答，語氣溫柔親切，並將字數控制在 50 字以內，不需多餘的問候語。`;
 
     if (forceRegenerate) {
-      prompt += `\n【重要提示】：這是一次重新推薦，請務必給出與剛才完全不同的新建議（例如不同的美食、不同的視角或不同的日文短語）！不要重複！`;
+      prompt += `\n【重要提示】：這是一次重新推薦，請務必給出與剛才完全不同的新建議！不要重複！`;
     }
 
     const tip = await callGeminiAPI(prompt);
@@ -594,6 +501,7 @@ const ItineraryView = ({
     const newPlaces = [...newData[selectedDayIdx].places];
     const clonedPlace = JSON.parse(JSON.stringify(newPlaces[idx])); 
     clonedPlace.name = clonedPlace.name + ' (複製)';
+    clonedPlace.id = generateId(); // 【修正重點 3】複製時給予新 ID
     newPlaces.splice(idx + 1, 0, clonedPlace);
     newData[selectedDayIdx].places = newPlaces;
     setItineraryData(newData);
@@ -602,7 +510,7 @@ const ItineraryView = ({
 
   const openEditModal = (placeIdx = null, placeData = null, insertIdx = null) => {
     setConfirmDeleteIdx(null);
-    const defaultData = { type: '景點', name: '', description: '', duration: '約 1 小時', badges: '', openHours: '', bookingInfo: '' };
+    const defaultData = { id: '', type: '景點', name: '', description: '', duration: '約 1 小時', badges: '', openHours: '', bookingInfo: '' };
     const formData = placeData ? { ...defaultData, ...placeData, badges: placeData.badges ? placeData.badges.join('，') : '' } : defaultData;
     setEditModal({ isOpen: true, placeIdx, insertIdx, data: formData });
   };
@@ -618,7 +526,12 @@ const ItineraryView = ({
       ? editModal.data.badges.split(/[,，]/).map(b => b.trim()).filter(b => b) 
       : [];
 
-    const processedData = { ...editModal.data, badges: processedBadges };
+    // 【修正重點 3】儲存時若沒有 ID 則產生一個
+    const processedData = { 
+      ...editModal.data, 
+      id: editModal.data.id || generateId(),
+      badges: processedBadges 
+    };
     
     if (!processedData.openHours) delete processedData.openHours;
     if (!processedData.bookingInfo) delete processedData.bookingInfo;
@@ -642,14 +555,12 @@ const ItineraryView = ({
   };
 
   const mapQueryName = currentDay.mapKeyword || currentDay.places.find(p => ['景點', '活動', '購物'].includes(p.type))?.name || currentDay.places[0]?.name || "名古屋車站";
+  // 【修正重點 4】修正 Google Maps 變數嵌入語法 (${})
   const mapEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(mapQueryName)}&t=&z=13&ie=UTF8&iwloc=&output=embed`;
 
-  // UI Helper: 精緻低調的新增按鈕
   const InlineAddButton = ({ insertIdx }) => (
     <div className="relative flex items-center z-10 group cursor-pointer -my-2" onClick={() => openEditModal(null, null, insertIdx)}>
-      {/* w-12 保證與行程圓形圖示寬度一致，讓加號完美置中於紫色線上 */}
       <div className="w-12 flex justify-center flex-shrink-0">
-        {/* 背景色用來遮擋後方的線段，產生留白呼吸感 */}
         <div className="bg-[#FAF9F6] py-1.5 z-10">
           <div className="w-6 h-6 rounded-full bg-white border-2 border-dashed border-[#A39D78]/60 text-[#A39D78] flex items-center justify-center group-hover:border-[#773690] group-hover:text-[#773690] group-hover:bg-purple-50 group-hover:scale-110 transition-all shadow-sm">
             <Plus size={14} strokeWidth={3} />
@@ -688,15 +599,6 @@ const ItineraryView = ({
               <Calendar size={22} />
               {currentDay.dateInfo}
             </h2>
-          </div>
-
-          <div className="flex justify-end mb-3">
-            <button 
-              onClick={() => { setIsEditMode(!isEditMode); setConfirmDeleteIdx(null); }} 
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-colors shadow-sm ${isEditMode ? 'bg-orange-100 text-orange-700 border border-orange-200' : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'}`}
-            >
-              {isEditMode ? <><Check size={16} /> 完成編輯</> : <><Pencil size={16} /> 編輯行程</>}
-            </button>
           </div>
           
           <div className="flex flex-col gap-2 text-sm text-gray-600">
@@ -787,28 +689,26 @@ const ItineraryView = ({
 
         <div className="flex flex-col relative before:absolute before:inset-0 before:ml-6 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-[#773690]/20 before:to-transparent">
           
-          {/* 在最開頭的上方插入 */}
           <InlineAddButton insertIdx={0} />
 
           {currentDay.places.map((place, idx) => {
             const isStrategy = place.type === '攻略';
 
             return (
-              <React.Fragment key={idx}>
-                {/* 確保點開選單的卡片層級為 z-[60]，絕對不會被下方的卡片遮擋 */}
+              // 【修正重點 3】這裡的 key 改為使用 place.id，避免刪除或移動時狀態錯亂
+              <React.Fragment key={place.id || idx}>
                 <div className={`relative flex items-start gap-4 group py-2 ${activeMenuIdx === idx ? 'z-[60]' : 'z-0'}`}>
                   <div className={`relative z-10 flex-shrink-0 w-12 h-12 rounded-full bg-white border-2 ${isStrategy ? 'border-orange-400 text-orange-500' : 'border-[#773690] text-[#773690]'} shadow-sm flex items-center justify-center transition-colors`}>
                     {getIconForType(place.type, "")}
                   </div>
 
-                  <div className={`flex-1 rounded-2xl p-5 shadow-sm border transition-all ${isEditMode ? 'ring-2 ring-purple-100 bg-gray-50' : 'hover:shadow-md bg-white'} ${isStrategy ? 'bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-100' : 'border-gray-100'}`}>
+                  <div className={`flex-1 rounded-2xl p-5 shadow-sm border transition-all hover:shadow-md bg-white ${isStrategy ? 'bg-gradient-to-r from-orange-50 to-yellow-50 border-orange-100' : 'border-gray-100'}`}>
                     <div className="flex justify-between items-start mb-2 relative">
                       <h3 className={`font-bold text-lg leading-tight ${isStrategy ? 'text-orange-800 flex items-center gap-1.5' : 'text-gray-800'}`}>
                         {isStrategy && <MapIcon size={18} />}
                         {place.name}
                       </h3>
 
-                      {/* 右上角的三個點選單 (加大觸控範圍，方便手機點擊) */}
                       <div className="relative">
                         <button
                           onClick={(e) => { e.stopPropagation(); setActiveMenuIdx(activeMenuIdx === idx ? null : idx); setConfirmDeleteIdx(null); }}
@@ -819,7 +719,6 @@ const ItineraryView = ({
 
                         {activeMenuIdx === idx && (
                           <>
-                            {/* 隱形遮罩，點擊外面關閉選單 */}
                             <div className="fixed inset-0 z-[110]" onClick={() => setActiveMenuIdx(null)}></div>
                             <div className="absolute right-0 top-8 w-40 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 z-[120] animate-in fade-in zoom-in-95 duration-200">
                               <button onClick={() => { openEditModal(idx, place); setActiveMenuIdx(null); }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"><Pencil size={14}/> 編輯卡片</button>
@@ -941,16 +840,6 @@ const ItineraryView = ({
                       </div>
                     )}
 
-                    {!isStrategy && place.photoTips && (
-                      <div className="bg-blue-50/50 rounded-xl p-3 mb-4 border border-blue-100/50">
-                        <div className="flex items-center gap-1.5 text-blue-700 font-medium text-sm mb-1">
-                          <Camera size={16} />
-                          <span>拍照小技巧</span>
-                        </div>
-                        <p className="text-blue-800/80 text-sm leading-snug">{place.photoTips}</p>
-                      </div>
-                    )}
-
                     {!isStrategy && aiTips[place.name] && (
                       <div className="bg-purple-50/70 rounded-xl p-3 mb-4 border border-purple-100 relative group">
                         <div className="flex items-center justify-between mb-1.5">
@@ -970,11 +859,11 @@ const ItineraryView = ({
                       </div>
                     )}
 
-                    {/* 一般模式：導覽與 AI 探索按鈕 */}
-                    {!isStrategy && !isEditMode && (
+                    {!isStrategy && (
                       <div className="flex gap-2 pt-2 border-t border-gray-50 flex-wrap">
+                        {/* 【修正重點 4】單點導航網址也修正 */}
                         <a 
-                          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(place.name)}`}
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}`}
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="flex-1 flex items-center justify-center gap-1.5 bg-[#FAF9F6] hover:bg-[#A39D78]/10 text-gray-700 py-2 rounded-xl text-sm font-medium transition-colors min-w-[30%]"
@@ -992,50 +881,15 @@ const ItineraryView = ({
                       </div>
                     )}
 
-                    {/* 編輯模式：專屬底部編輯控制列 (防呆刪除機制 + 加大觸控範圍) */}
-                    {isEditMode && (
-                      <div className={`flex items-center justify-between mt-4 pt-3 border-t ${isStrategy ? 'border-orange-200' : 'border-purple-100/50'}`}>
-                        <div className="flex gap-2">
-                          <button onClick={() => movePlace(idx, -1)} disabled={idx === 0} className="p-2.5 rounded-xl bg-white text-gray-500 hover:bg-gray-100 border border-gray-200 shadow-sm disabled:opacity-30"><ChevronUp size={18}/></button>
-                          <button onClick={() => movePlace(idx, 1)} disabled={idx === currentDay.places.length - 1} className="p-2.5 rounded-xl bg-white text-gray-500 hover:bg-gray-100 border border-gray-200 shadow-sm disabled:opacity-30"><ChevronDown size={18}/></button>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => openEditModal(idx, place)} className="p-2.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 shadow-sm border border-blue-100"><Pencil size={18}/></button>
-                          <button onClick={() => duplicatePlace(idx)} className="p-2.5 rounded-xl bg-green-50 text-green-600 hover:bg-green-100 shadow-sm border border-green-100"><Copy size={18}/></button>
-                          {confirmDeleteIdx === idx ? (
-                            <button onClick={() => deletePlace(idx)} className="px-3 py-2.5 rounded-xl bg-red-500 text-white font-bold text-xs hover:bg-red-600 shadow-sm flex items-center gap-1.5 animate-in slide-in-from-right-2">
-                              <Trash2 size={14}/> 確定刪除?
-                            </button>
-                          ) : (
-                            <button onClick={() => setConfirmDeleteIdx(idx)} className="p-2.5 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 shadow-sm border border-red-100"><Trash2 size={18}/></button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
                   </div>
                 </div>
 
-                {/* 在每張卡片的下方插入 (這會自動成為下一張卡片的上方) */}
                 <InlineAddButton insertIdx={idx + 1} />
               </React.Fragment>
             );
           })}
-          
-          {/* 編輯模式下的大按鈕：新增行程 */}
-          {isEditMode && (
-            <div className="relative flex items-center justify-center gap-4 z-0 mt-4">
-              <button 
-                onClick={() => openEditModal()}
-                className="w-full bg-white border-2 border-dashed border-purple-200 text-[#773690] py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-purple-50 transition-colors shadow-sm"
-              >
-                <Plus size={20} /> 新增行程卡片
-              </button>
-            </div>
-          )}
         </div>
 
-        {/* AI Daily Journal Generator UI */}
         <div className="mt-8 mb-16">
           {dailyJournals[selectedDayIdx] ? (
             <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-5 rounded-2xl border border-pink-100 shadow-sm relative animate-in fade-in zoom-in-95 duration-300">
@@ -1141,7 +995,6 @@ const ItineraryView = ({
         </div>
       </div>
 
-      {/* 沉浸式編輯表單 Modal */}
       {editModal.isOpen && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -1243,7 +1096,6 @@ const ItineraryView = ({
   );
 };
 
-// 2. Guide View 
 const GuideView = ({ 
   user, packingList, setPackingList, isListLoaded, updateFirestore,
   translationHistory, setTranslationHistory, ttsCache, setTtsCache
@@ -1382,14 +1234,16 @@ const GuideView = ({
 
     try {
       const text = await fetchGemini(prompt, true, 2);
-      const cleanedStr = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const parsedData = JSON.parse(cleanedStr);
-      const newEntry = { id: Date.now(), original: translateInput, ...parsedData };
-      
-      setTranslateData(newEntry);
-      setTranslateInput('');
-      setTranslationHistory(prev => [newEntry, ...prev.filter(item => item.original !== translateInput)].slice(0, 5));
-
+      const match = text.match(/\{[\s\S]*\}/); // 強制抓取 JSON 物件
+      if (match) {
+        const parsedData = JSON.parse(match[0]);
+        const newEntry = { id: Date.now(), original: translateInput, ...parsedData };
+        setTranslateData(newEntry);
+        setTranslateInput('');
+        setTranslationHistory(prev => [newEntry, ...prev.filter(item => item.original !== translateInput)].slice(0, 5));
+      } else {
+        throw new Error("Invalid JSON");
+      }
     } catch (error) {
       console.error("Translation error:", error);
       setTranslateData({
@@ -1497,7 +1351,6 @@ const GuideView = ({
   return (
     <div className="h-full overflow-y-auto hide-scrollbar px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] space-y-4 animate-in fade-in duration-300 relative">
       
-      {/* 🚨 快捷按鍵區 */}
       <div className="flex overflow-x-auto hide-scrollbar gap-3 pb-2 -mx-4 px-4 mb-2">
         <button 
           onClick={(e) => {
@@ -1528,13 +1381,12 @@ const GuideView = ({
         })}
       </div>
 
-      {/* AI Translator */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
         <AccordionHeader id="translator" title="隨身翻譯蒟蒻" icon={MessageCircle} />
         {expandedSection === 'translator' && (
           <div className="p-5 pt-0 border-t border-gray-50">
             <p className="text-xs text-gray-500 mb-3 flex items-center gap-1">
-              <Info size={12} /> 輸入你想說的中文，AI 幫 backwards轉成道地日文！
+              <Info size={12} /> 輸入你想說的中文，AI 幫你翻成道地日文！
             </p>
             <form onSubmit={handleTranslate} className="flex gap-2 mb-4">
               <div className="relative flex-1">
@@ -1648,7 +1500,6 @@ const GuideView = ({
         )}
       </div>
 
-      {/* 1. Packing List */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
         <AccordionHeader id="packing" title="行李打包與購物清單" icon={ShoppingBag} />
         {expandedSection === 'packing' && (
@@ -1657,7 +1508,6 @@ const GuideView = ({
               <div className="flex justify-center py-4"><Loader2 className="animate-spin text-[#A39D78]" /></div>
             ) : (
               <>
-                {/* Carry On */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
                     <h4 className="text-sm font-bold text-[#A39D78] flex items-center gap-2">隨身/手提行李 (機艙)</h4>
@@ -1693,7 +1543,6 @@ const GuideView = ({
                   </form>
                 </div>
 
-                {/* Checked Baggage */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
                     <h4 className="text-sm font-bold text-[#A39D78] flex items-center gap-2">托運行李</h4>
@@ -1729,7 +1578,6 @@ const GuideView = ({
                   </form>
                 </div>
 
-                {/* Shopping List */}
                 <div className="bg-[#FAF9F6] p-4 rounded-2xl">
                   <div className="flex justify-between items-center mb-3">
                     <h4 className="text-sm font-bold text-[#773690] flex items-center gap-2">日本必買許願池</h4>
@@ -1767,7 +1615,6 @@ const GuideView = ({
               </>
             )}
 
-            {/* AI Packing Consultant */}
             <div className="pt-2">
               {aiSuggestion ? (
                 <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100">
@@ -1799,8 +1646,7 @@ const GuideView = ({
         )}
       </div>
 
-      {/* Undo Toast UI */}
-      {/* 【優化 2】：加入 pointer-events-none 防止 Toast 阻擋底層按鈕點擊，並在復原按鈕加回 pointer-events-auto */}
+      {/* 【修正重點 5】修正 Toast 元件阻擋點擊的問題 */}
       {toastMsg && (
         <div className="fixed bottom-[80px] left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-3 rounded-full shadow-2xl flex items-center gap-4 z-[110] animate-in slide-in-from-bottom-5 pointer-events-none">
           <span className="text-sm whitespace-nowrap">{toastMsg}</span>
@@ -1815,7 +1661,6 @@ const GuideView = ({
         </div>
       )}
       
-      {/* iOS-style Emergency Modal */}
       {emergencyModal.isOpen && (
         <div className="fixed inset-0 z-[100] flex flex-col justify-end animate-in fade-in duration-200">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => setEmergencyModal({ ...emergencyModal, isOpen: false })}></div>
@@ -1844,7 +1689,6 @@ const GuideView = ({
   );
 };
 
-// 3. Weather View
 const WeatherView = ({ weatherData, isLoadingWeather }) => {
   const fallbackWeatherForecast = [
     { day: '4/21', weekday: '二', temp: '15° / 20°', condition: 'Rain', desc: '多雲時雨', clothingHint: '建議帶雨傘及防風外套' },
@@ -1899,7 +1743,6 @@ const WeatherView = ({ weatherData, isLoadingWeather }) => {
   );
 };
 
-// --- MAIN APP COMPONENT ---
 export default function App() {
   const [activeTab, setActiveTab] = useState('itinerary');
   const [user, setUser] = useState(null);
@@ -1917,7 +1760,6 @@ export default function App() {
   const [packingList, setPackingList] = useState(getInitialPackingList());
   const [isListLoaded, setIsListLoaded] = useState(false);
   
-  // 💾 新增行程的全域狀態與資料庫載入
   const getInitialItinerary = () => {
     try {
       const saved = localStorage.getItem('nagoya_itinerary');
@@ -1936,6 +1778,14 @@ export default function App() {
   useEffect(() => {
     if (!auth) {
       setUser({ uid: 'safari-offline-user' });
+      // 就算離線也要載入天氣
+      setIsLoadingWeather(true);
+      fetchDynamicWeather().then(data => {
+        if (data && Array.isArray(data) && data.length === 6) {
+          setWeatherData(data);
+        }
+        setIsLoadingWeather(false);
+      });
       return;
     }
 
@@ -1968,7 +1818,6 @@ export default function App() {
     return () => unsubscribeAuth && unsubscribeAuth();
   }, []);
 
-  // 💾 Firebase 行李清單與行程同步
   useEffect(() => {
     if (!user) return;
     if (!db) {
@@ -1990,7 +1839,6 @@ export default function App() {
         setIsListLoaded(true);
       });
 
-      // 監聽行程資料
       const itinRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'itinerary');
       const unsubItin = onSnapshot(itinRef, (docSnap) => {
         if (docSnap.exists() && docSnap.data().data) {
@@ -1998,6 +1846,8 @@ export default function App() {
         } else {
           setDoc(itinRef, { data: mockData.itinerary }).catch(e => console.warn(e));
         }
+      }, (error) => {
+        console.warn("Firestore 行程讀取被阻擋:", error);
       });
 
       return () => {
