@@ -37,22 +37,24 @@ const USER_API_KEY = import.meta.env.VITE_GEMINI_API_KEY; // 強制更新金鑰
 const fetchGemini = async (prompt, useJson = false, retries = 3) => {
   const delays = [1000, 2000, 4000, 8000];
   
-  // 準備一系列備援模型清單 (只要前面失敗，就自動嘗試下一個)
+  // 準備一系列備援模型清單
   const envConfigs = [
     { name: 'gemini-1.5-flash', key: USER_API_KEY },
     { name: 'gemini-1.5-flash-latest', key: USER_API_KEY },
     { name: 'gemini-1.5-pro', key: USER_API_KEY },
-    { name: 'gemini-pro', key: USER_API_KEY },
-    { name: 'gemini-2.5-flash-preview-09-2025', key: "" } // 預覽環境專用
+    { name: 'gemini-pro', key: USER_API_KEY }
+    // 移除了原本沒有 key 的預覽環境，避免觸發錯誤
   ];
 
   for (let i = 0; i <= retries; i++) {
     for (const config of envConfigs) {
+      if (!config.key) continue; // 防呆機制：如果沒有金鑰就直接跳過這個模型
+      
       try {
         const isGemini1_0 = config.name === 'gemini-pro';
         const reqBody = { contents: [{ parts: [{ text: prompt }] }] };
         
-        // Gemini 1.0 不支援強制的 json 模式，因此若 fallback 到 1.0 需略過此設定
+        // 只有較新的模型才強制使用 JSON 模式
         if (useJson && !isGemini1_0) {
           reqBody.generationConfig = { responseMimeType: "application/json" };
         }
@@ -63,26 +65,23 @@ const fetchGemini = async (prompt, useJson = false, retries = 3) => {
           body: JSON.stringify(reqBody)
         });
 
-        if (!response.ok) {
-          // 如果這個模型報錯 (例如 404 或 403)，立刻無縫切換下一個模型試試看！
-          continue; 
-        }
+        if (!response.ok) continue; // 如果報錯，無縫切換下一個模型試試看
         
         const data = await response.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return text;
         
       } catch (error) {
-        // 發生網路錯誤，繼續嘗試下一個
         continue;
       }
     }
-    // 如果這輪所有模型都失敗，等待幾秒後再重試
+    // 等待幾秒後再重試
     if (i < retries) await new Promise(res => setTimeout(res, delays[i]));
   }
   throw new Error("所有 AI 模型嘗試皆失敗");
 };
 
+// 呼叫 API 的包裝函式保持不變
 const callGeminiAPI = async (prompt) => {
   try {
     const text = await fetchGemini(prompt, false, 4);
@@ -93,27 +92,25 @@ const callGeminiAPI = async (prompt) => {
 };
 
 const callGeminiTTS = async (text) => {
-  // 強制使用裝置內建語音引擎，確保發音功能穩定不超時
   return null; 
 };
 
+// 強化版的天氣資料擷取，不會因為 AI 多講廢話而當機
 const fetchDynamicWeather = async () => {
   const prompt = `請以 JSON 格式預測日本名古屋 2026/04/21 到 2026/04/26 的天氣與動態穿著建議。
 回傳一個 JSON 陣列，包含 6 天的資料。
 陣列元素格式嚴格如下：
-{
-  "day": "4/21",
-  "weekday": "二",
-  "temp": "15° / 22°",
-  "condition": "Sunny", 
-  "desc": "晴朗舒適",
-  "clothingHint": "薄長袖加上休閒外套"
-}`;
+[{"day": "4/21", "weekday": "二", "temp": "15° / 22°", "condition": "Sunny", "desc": "晴朗舒適", "clothingHint": "薄長袖加上休閒外套"}]`;
   try {
     const text = await fetchGemini(prompt, true, 2);
-    const cleanedStr = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-    return JSON.parse(cleanedStr);
+    // 使用正則表達式，強制只抓取中括號 [ 與 ] 之間的內容 (也就是 JSON 陣列)
+    const match = text.match(/\[[\s\S]*\]/);
+    if (match) {
+      return JSON.parse(match[0]);
+    }
+    return null;
   } catch (error) {
+    console.error("天氣解析失敗，將使用預設資料:", error);
     return null;
   }
 };
