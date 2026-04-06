@@ -32,25 +32,14 @@ try {
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- GEMINI API SETUP (多模型自動備援系統) ---
+const USER_API_KEY = ""; 
 
-// 🚨 【殺手鐧測試】請把下面引號裡的文字，直接換成你的真實 API Key！ 🚨
-// 例如：const USER_API_KEY = "AIzaSyBxxxxxxx-xxxxxxxx";
-const USER_API_KEY = "AIzaSyCIN1Gr5bG2A2F-6r1he1Yni44cU8rEPqg"; 
-
-console.log("目前讀取到的 API Key：", USER_API_KEY.startsWith("AIza") ? "格式看起來正確，準備連線！" : "⚠️ 注意：尚未填寫正確的金鑰！");
-
-// 統一的智慧型 Fetch 函數，自動切換不同模型，徹底防 404 當機
+// 【修正重點 1】統一的智慧型 Fetch 函數，自動切換不同模型與環境，徹底防 404 當機
 const fetchGemini = async (prompt, useJson = false, retries = 3) => {
-  if (!USER_API_KEY.startsWith("AIza")) {
-    throw new Error("請先在程式碼中填入有效的 API Key");
-  }
-
   const delays = [1000, 2000, 4000, 8000];
   
-// 加入多種模型名稱作為備援，避免單一模型 404 找不到
   const envConfigs = [
-    { name: 'gemini-2.5-flash', key: USER_API_KEY },      // 使用你列表上的 2.5 版
-    { name: 'gemini-flash-latest', key: USER_API_KEY }    // 備援：永遠使用最新版
+    { name: 'gemini-2.5-flash-preview-09-2025', key: USER_API_KEY }
   ];
 
   for (let i = 0; i <= retries; i++) {
@@ -71,7 +60,6 @@ const fetchGemini = async (prompt, useJson = false, retries = 3) => {
         });
 
         if (!response.ok) {
-          console.warn(`模型 ${config.name} 連線失敗 (狀態碼: ${response.status})，嘗試下一個...`);
           continue; 
         }
         
@@ -104,7 +92,7 @@ const callGeminiTTS = async (text) => {
   return null; 
 };
 
-// 強化版 JSON 解析 (天氣)
+// 【修正重點 2】強化版 JSON 解析 (天氣)
 const fetchDynamicWeather = async () => {
   const prompt = `請以 JSON 格式預測日本名古屋 2026/04/21 到 2026/04/26 的天氣與動態穿著建議。
 回傳一個 JSON 陣列，包含 6 天的資料。
@@ -395,6 +383,7 @@ const ItineraryView = ({
   const [journalStyle, setJournalStyle] = useState('活潑可愛');
   const [journalLength, setJournalLength] = useState('短 (約50字)');
 
+  // 📝 編輯模式狀態 (移除 isEditMode)
   const [activeMenuIdx, setActiveMenuIdx] = useState(null); 
   const [editModal, setEditModal] = useState({ isOpen: false, placeIdx: null, insertIdx: null, data: null });
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState(null); 
@@ -512,7 +501,7 @@ const ItineraryView = ({
     const newPlaces = [...newData[selectedDayIdx].places];
     const clonedPlace = JSON.parse(JSON.stringify(newPlaces[idx])); 
     clonedPlace.name = clonedPlace.name + ' (複製)';
-    clonedPlace.id = generateId(); 
+    clonedPlace.id = generateId(); // 【修正重點 3】複製時給予新 ID
     newPlaces.splice(idx + 1, 0, clonedPlace);
     newData[selectedDayIdx].places = newPlaces;
     setItineraryData(newData);
@@ -537,6 +526,7 @@ const ItineraryView = ({
       ? editModal.data.badges.split(/[,，]/).map(b => b.trim()).filter(b => b) 
       : [];
 
+    // 【修正重點 3】儲存時若沒有 ID 則產生一個
     const processedData = { 
       ...editModal.data, 
       id: editModal.data.id || generateId(),
@@ -565,6 +555,7 @@ const ItineraryView = ({
   };
 
   const mapQueryName = currentDay.mapKeyword || currentDay.places.find(p => ['景點', '活動', '購物'].includes(p.type))?.name || currentDay.places[0]?.name || "名古屋車站";
+  // 【修正重點 4】修正 Google Maps 變數嵌入語法 (${})
   const mapEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(mapQueryName)}&t=&z=13&ie=UTF8&iwloc=&output=embed`;
 
   const InlineAddButton = ({ insertIdx }) => (
@@ -704,6 +695,7 @@ const ItineraryView = ({
             const isStrategy = place.type === '攻略';
 
             return (
+              // 【修正重點 3】這裡的 key 改為使用 place.id，避免刪除或移動時狀態錯亂
               <React.Fragment key={place.id || idx}>
                 <div className={`relative flex items-start gap-4 group py-2 ${activeMenuIdx === idx ? 'z-[60]' : 'z-0'}`}>
                   <div className={`relative z-10 flex-shrink-0 w-12 h-12 rounded-full bg-white border-2 ${isStrategy ? 'border-orange-400 text-orange-500' : 'border-[#773690] text-[#773690]'} shadow-sm flex items-center justify-center transition-colors`}>
@@ -869,8 +861,9 @@ const ItineraryView = ({
 
                     {!isStrategy && (
                       <div className="flex gap-2 pt-2 border-t border-gray-50 flex-wrap">
+                        {/* 【修正重點 4】單點導航網址也修正 */}
                         <a 
-                          href={`http://googleusercontent.com/maps.google.com/5{encodeURIComponent(place.name)}`}
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}`}
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="flex-1 flex items-center justify-center gap-1.5 bg-[#FAF9F6] hover:bg-[#A39D78]/10 text-gray-700 py-2 rounded-xl text-sm font-medium transition-colors min-w-[30%]"
@@ -1653,6 +1646,7 @@ const GuideView = ({
         )}
       </div>
 
+      {/* 【修正重點 5】修正 Toast 元件阻擋點擊的問題 */}
       {toastMsg && (
         <div className="fixed bottom-[80px] left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-3 rounded-full shadow-2xl flex items-center gap-4 z-[110] animate-in slide-in-from-bottom-5 pointer-events-none">
           <span className="text-sm whitespace-nowrap">{toastMsg}</span>
@@ -1784,6 +1778,7 @@ export default function App() {
   useEffect(() => {
     if (!auth) {
       setUser({ uid: 'safari-offline-user' });
+      // 就算離線也要載入天氣
       setIsLoadingWeather(true);
       fetchDynamicWeather().then(data => {
         if (data && Array.isArray(data) && data.length === 6) {
@@ -1802,7 +1797,7 @@ export default function App() {
           await signInAnonymously(auth);
         }
       } catch (error) {
-        console.warn("Firebase 登入失敗，切換至離線模式");
+        console.warn("Firebase 登入失敗 (可能被 Safari ITP 阻擋)，切換至離線模式");
         setUser({ uid: 'safari-offline-user' });
       }
     };
@@ -1872,7 +1867,7 @@ export default function App() {
       const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'packingList');
       await setDoc(docRef, newList);
     } catch(e) {
-      console.warn("儲存受阻:", e);
+      console.warn("Safari 阻擋了資料儲存:", e);
     }
   };
 
@@ -1883,7 +1878,7 @@ export default function App() {
       const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'itinerary');
       await setDoc(docRef, { data: newData });
     } catch(e) {
-      console.warn("儲存受阻:", e);
+      console.warn("Safari 阻擋了行程儲存:", e);
     }
   };
 
