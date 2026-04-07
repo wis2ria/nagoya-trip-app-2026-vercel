@@ -4,8 +4,8 @@ import {
   Camera, Ticket, ShoppingBag, Sun, CloudRain, Wind, 
   ChevronDown, ChevronUp, Plus, Phone, FileText, Check, 
   Navigation, Map as MapIcon, Info, Image as ImageIcon,
-  Umbrella, AlertTriangle, Loader2, X, Cloud, Snowflake, Trash2,
-  MessageCircle, Copy, CheckCheck, Volume2, RefreshCw, ZoomIn,
+  Umbrella, Loader2, X, Cloud, Snowflake, Trash2,
+  MessageCircle, Copy, CheckCheck, Volume2, ZoomIn,
   Pencil, Save, MoreVertical
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
@@ -31,89 +31,70 @@ try {
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-// --- GEMINI API SETUP (多模型自動備援系統) ---
-const USER_API_KEY = ""; 
+// --- 靜態翻譯辭典 (Mock Database) ---
+const TRANSLATION_DICT = [
+  { keywords: ['廁所', '洗手間', '化妝室', '尿', '大便'], zh: '請問廁所在哪裡？', jp: 'トイレはどこですか？', romaji: 'Toire wa doko desu ka?', tip: '日本很多便利商店都有提供免費廁所喔！' },
+  { keywords: ['拍照', '照相', '合照', '相機'], zh: '可以幫我拍照嗎？', jp: '写真を撮っていただけますか？', romaji: 'Shashin o totte itadakemasu ka?', tip: '把手機或相機遞給對方時，可以微笑加上這句。' },
+  { keywords: ['結帳', '買單', '多少錢', '付錢', '帳單'], zh: '麻煩結帳，請問多少錢？', jp: 'お会計をお願いします。いくらですか？', romaji: 'Okaikei o onegai shimasu. Ikura desu ka?', tip: '在日本通常是在門口櫃檯結帳，較少在桌邊結帳。' },
+  { keywords: ['迷路', '怎麼走', '路', '車站', '地圖'], zh: '我迷路了，請問到車站怎麼走？', jp: '道に迷ってしまいました。駅までどう行けばいいですか？', romaji: 'Michi ni mayotte shimaimashita. Eki made dou ikeba ii desu ka?', tip: '如果遇到警察局 (Kōban)，他們通常很樂意幫忙指路。' },
+  { keywords: ['推薦', '好吃', '招牌', '人氣'], zh: '請問有推薦的餐點嗎？', jp: 'おすすめのメニューはありますか？', romaji: 'Osusume no menyū wa arimasu ka?', tip: '不知道吃什麼時，這句話非常實用！' },
+  { keywords: ['水', '白開水', '冰水'], zh: '請給我一杯水。', jp: 'お水を一杯いただけますか？', romaji: 'Omizu o ippai itadakemasu ka?', tip: '日本餐廳通常會免費提供冰水 (Ohiya)。' },
+  { keywords: ['免稅', '退稅', 'tax free'], zh: '請問這裡有免稅服務嗎？', jp: 'ここは免税できますか？', romaji: 'Koko wa menzei dekimasu ka?', tip: '結帳前記得先確認，並準備好護照。' },
+  { keywords: ['袋子', '塑膠袋', '購物袋'], zh: '我不需要袋子，謝謝。', jp: '袋は結構です、ありがとうございます。', romaji: 'Fukuro wa kekkou desu, arigatou gozaimasu.', tip: '日本現在購物袋大多要收費喔。' },
+  { keywords: ['謝謝', '感謝', '多謝'], zh: '非常感謝你！', jp: '本当にありがとうございます！', romaji: 'Hontou ni arigatou gozaimasu!', tip: '面帶微笑說出這句，是最棒的交流。' },
+  { keywords: ['對不起', '抱歉', '不好意思'], zh: '非常抱歉 / 不好意思。', jp: '申し訳ありません / すみません。', romaji: 'Moushiwake arimasen / Sumimasen.', tip: '「Sumimasen」也可以用來引起店員注意。' },
+  { keywords: ['打不開', '壞了', '不能用', '故障'], zh: '不好意思，這個好像壞了/不能用。', jp: 'すみません、これ壊れているみたいです。', romaji: 'Sumimasen, kore kowarete iru mitai desu.', tip: '飯店房間遇到設備問題時可以向櫃檯反應。' },
+  { keywords: ['過敏', '不吃', '不要加', '忌口'], zh: '我對某些食物過敏。', jp: '私は食物アレルギーがあります。', romaji: 'Watashi wa shokumotsu arerugī ga arimasu.', tip: '如果有嚴重過敏，建議額外準備寫有過敏原的字卡。' },
+];
 
-// 【修正重點 1】統一的智慧型 Fetch 函數，自動切換不同模型與環境，徹底防 404 當機
-const fetchGemini = async (prompt, useJson = false, retries = 3) => {
-  const delays = [1000, 2000, 4000, 8000];
-  
-  const envConfigs = [
-    { name: 'gemini-2.5-flash-preview-09-2025', key: USER_API_KEY }
-  ];
-
-  for (let i = 0; i <= retries; i++) {
-    for (const config of envConfigs) {
-      try {
-        const isGemini1_0 = config.name === 'gemini-pro';
-        const reqBody = { contents: [{ parts: [{ text: prompt }] }] };
-        
-        // Gemini 1.0 不支援強制的 json 模式，因此若 fallback 到 1.0 需略過此設定
-        if (useJson && !isGemini1_0) {
-          reqBody.generationConfig = { responseMimeType: "application/json" };
-        }
-        
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${config.name}:generateContent?key=${config.key}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(reqBody)
-        });
-
-        if (!response.ok) {
-          continue; 
-        }
-        
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) return text;
-        
-      } catch (error) {
-        // 發生網路錯誤，繼續嘗試下一個
-        continue;
-      }
-    }
-    // 如果這輪所有模型都失敗，等待幾秒後再重試
-    if (i < retries) await new Promise(res => setTimeout(res, delays[i]));
-  }
-  throw new Error("所有 AI 模型嘗試皆失敗");
+const DEFAULT_TRANSLATION = {
+  zh: '不好意思，我不太懂日文…。我現在用一下翻譯 App，能麻煩您稍等一下嗎？',
+  jp: 'すみません、日本語がよく分からなくて…。今、翻訳アプリを使いますので、少し待っていただけますか？',
+  romaji: 'Sumimasen, nihongo ga yoku wakaranakute... Ima, honyaku apuri o tsukaimasu node, sukoshi matte itadakemasu ka?',
+  tip: '對方如果說了很長一串聽不懂的日文，可以直接秀出這張卡片。'
 };
 
-const callGeminiAPI = async (prompt) => {
+// --- 真實天氣 API (Open-Meteo 免金鑰) ---
+const fetchRealWeather = async () => {
   try {
-    const text = await fetchGemini(prompt, false, 4);
-    return text || "AI 似乎睡著了，請稍後再試。";
-  } catch (error) {
-    return "抱歉，AI 小助手目前有點忙碌，連線超時，請稍後再試！🙏";
-  }
-};
+    // 抓取名古屋 (緯度 35.1815, 經度 136.9066) 未來 6 天的天氣
+    const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=35.1815&longitude=136.9066&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=Asia%2FTokyo&forecast_days=6');
+    if (!res.ok) throw new Error("天氣 API 呼叫失敗");
+    const data = await res.json();
 
-const callGeminiTTS = async (text) => {
-  // 強制使用裝置內建語音引擎，確保發音功能穩定不超時
-  return null; 
-};
+    // WMO 天氣代碼轉換
+    const wmoToCondition = (code) => {
+      if (code === 0 || code === 1) return { condition: 'Sunny', desc: '晴朗舒適', clothingHint: '薄長袖加上輕便外套' };
+      if (code === 2 || code === 3 || code === 45 || code === 48) return { condition: 'Cloudy', desc: '多雲時晴', clothingHint: '洋蔥式穿搭，早晚微涼' };
+      if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || (code >= 95 && code <= 99)) return { condition: 'Rain', desc: '陰雨綿綿', clothingHint: '建議帶雨傘及防風外套' };
+      if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { condition: 'Snow', desc: '寒冷降雪', clothingHint: '嚴寒！厚羽絨衣、手套與毛帽' };
+      return { condition: 'Sunny', desc: '晴朗舒適', clothingHint: '薄長袖加上輕便外套' };
+    };
 
-// 【修正重點 2】強化版 JSON 解析 (天氣)
-const fetchDynamicWeather = async () => {
-  const prompt = `請以 JSON 格式預測日本名古屋 2026/04/21 到 2026/04/26 的天氣與動態穿著建議。
-回傳一個 JSON 陣列，包含 6 天的資料。
-陣列元素格式嚴格如下：
-[{"day": "4/21", "weekday": "二", "temp": "15° / 22°", "condition": "Sunny", "desc": "晴朗舒適", "clothingHint": "薄長袖加上休閒外套"}]`;
-  try {
-    const text = await fetchGemini(prompt, true, 2);
-    // 使用正則表達式，強制只擷取 [ 與 ] 之間的內容（包含中括號）
-    const match = text.match(/\[[\s\S]*\]/);
-    if (match) {
-      return JSON.parse(match[0]);
-    }
-    return null;
+    const tripDates = ['4/21', '4/22', '4/23', '4/24', '4/25', '4/26'];
+    const weekdays = ['二', '三', '四', '五', '六', '日'];
+
+    return data.daily.time.map((timeStr, idx) => {
+      const maxTemp = Math.round(data.daily.temperature_2m_max[idx]);
+      const minTemp = Math.round(data.daily.temperature_2m_min[idx]);
+      const codeInfo = wmoToCondition(data.daily.weathercode[idx]);
+
+      return {
+        day: tripDates[idx],
+        weekday: weekdays[idx],
+        temp: `${minTemp}° / ${maxTemp}°`,
+        ...codeInfo
+      };
+    });
   } catch (error) {
-    console.warn("天氣解析失敗，將使用備用資料:", error);
+    console.warn("真實天氣讀取失敗，將使用預設備用資料:", error);
     return null;
   }
 };
+
 
 // --- MOCK DATA ---
-const generateId = () => Math.random().toString(36).substr(2, 9); // 生成簡單的隨機 ID
+const generateId = () => Math.random().toString(36).substr(2, 9);
 
 const mockData = {
   "tripInfo": {
@@ -366,24 +347,14 @@ const getDocColorClass = (iconName) => {
 // --- MAIN VIEWS ---
 
 const ItineraryView = ({ 
-  user, weatherData, isLoadingWeather, dailyJournals, setDailyJournals,
-  aiTips, setAiTips, setPreviewImage, itineraryData, setItineraryData, updateFirestoreItinerary
+  user, weatherData, isLoadingWeather, setPreviewImage, itineraryData, setItineraryData, updateFirestoreItinerary
 }) => {
   const [selectedDayIdx, setSelectedDayIdx] = useState(0);
   const currentDay = itineraryData[selectedDayIdx];
   
   const viewRef = useRef(null);
   const dayNavRef = useRef(null);
-  const [loadingTips, setLoadingTips] = useState({});
 
-  const [isGeneratingJournal, setIsGeneratingJournal] = useState(false);
-  const [copiedJournal, setCopiedJournal] = useState(false);
-  const [showJournalForm, setShowJournalForm] = useState(false);
-  const [journalMood, setJournalMood] = useState('');
-  const [journalStyle, setJournalStyle] = useState('活潑可愛');
-  const [journalLength, setJournalLength] = useState('短 (約50字)');
-
-  // 📝 編輯模式狀態 (移除 isEditMode)
   const [activeMenuIdx, setActiveMenuIdx] = useState(null); 
   const [editModal, setEditModal] = useState({ isOpen: false, placeIdx: null, insertIdx: null, data: null });
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState(null); 
@@ -392,8 +363,6 @@ const ItineraryView = ({
     if (viewRef.current) {
       viewRef.current.scrollTop = 0;
     }
-    setJournalMood('');
-    setShowJournalForm(false);
     setActiveMenuIdx(null); 
     setConfirmDeleteIdx(null);
 
@@ -405,65 +374,6 @@ const ItineraryView = ({
       }
     }
   }, [selectedDayIdx]);
-
-  const handleAiExplore = async (placeName, placeType, forceRegenerate = false) => {
-    if (!forceRegenerate && (aiTips[placeName] || loadingTips[placeName])) return;
-    setLoadingTips(prev => ({ ...prev, [placeName]: true }));
-    
-    let prompt = `你是一個專業且充滿熱情的日本名古屋旅遊嚮導。旅客現在正在看行程中的「${placeName}」(類別:${placeType})。請提供一個實用的短建議。
-如果這是餐廳或購物，請教一句點餐或結帳的實用日文（附羅馬拼音和中文）。
-如果是景點，請分享一個內行人才知道的超簡短冷知識或拍照訣竅。
-請用繁體中文回答，語氣溫柔親切，並將字數控制在 50 字以內，不需多餘的問候語。`;
-
-    if (forceRegenerate) {
-      prompt += `\n【重要提示】：這是一次重新推薦，請務必給出與剛才完全不同的新建議！不要重複！`;
-    }
-
-    const tip = await callGeminiAPI(prompt);
-    setAiTips(prev => ({ ...prev, [placeName]: tip }));
-    setLoadingTips(prev => ({ ...prev, [placeName]: false }));
-  };
-
-  const handleGenerateJournal = async () => {
-    if (isGeneratingJournal) return;
-    setIsGeneratingJournal(true);
-    
-    const placesStr = currentDay.places.map(p => p.name).join('、');
-    const moodStr = journalMood.trim() ? `我今天特別想分享的心情或發生的事：「${journalMood.trim()}」。` : '';
-
-    const prompt = `我今天去了日本名古屋的以下地點：${placesStr}。${moodStr}
-請幫我用繁體中文寫一篇適合發在 Instagram 上的貼文。
-請嚴格遵守以下設定：
-- 貼文風格：${journalStyle}
-- 貼文字數：大約 ${journalLength}
-- 必須附上適合的 Emoji 與 Hashtags。`;
-
-    const result = await callGeminiAPI(prompt);
-    setDailyJournals(prev => ({ ...prev, [selectedDayIdx]: result }));
-    setIsGeneratingJournal(false);
-  };
-
-  const handleCopyJournal = (text) => {
-    try {
-      const textArea = document.createElement("textarea");
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.top = '0';
-      textArea.style.left = '0';
-      textArea.style.opacity = '0';
-      textArea.setAttribute('readonly', '');
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      
-      setCopiedJournal(true);
-      setTimeout(() => setCopiedJournal(false), 2000);
-    } catch (err) {
-      console.error('Copy failed', err);
-    }
-  };
 
   const movePlace = (idx, direction) => {
     setConfirmDeleteIdx(null);
@@ -501,7 +411,7 @@ const ItineraryView = ({
     const newPlaces = [...newData[selectedDayIdx].places];
     const clonedPlace = JSON.parse(JSON.stringify(newPlaces[idx])); 
     clonedPlace.name = clonedPlace.name + ' (複製)';
-    clonedPlace.id = generateId(); // 【修正重點 3】複製時給予新 ID
+    clonedPlace.id = generateId(); 
     newPlaces.splice(idx + 1, 0, clonedPlace);
     newData[selectedDayIdx].places = newPlaces;
     setItineraryData(newData);
@@ -526,7 +436,6 @@ const ItineraryView = ({
       ? editModal.data.badges.split(/[,，]/).map(b => b.trim()).filter(b => b) 
       : [];
 
-    // 【修正重點 3】儲存時若沒有 ID 則產生一個
     const processedData = { 
       ...editModal.data, 
       id: editModal.data.id || generateId(),
@@ -555,7 +464,6 @@ const ItineraryView = ({
   };
 
   const mapQueryName = currentDay.mapKeyword || currentDay.places.find(p => ['景點', '活動', '購物'].includes(p.type))?.name || currentDay.places[0]?.name || "名古屋車站";
-  // 【修正重點 4】修正 Google Maps 變數嵌入語法 (${})
   const mapEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(mapQueryName)}&t=&z=13&ie=UTF8&iwloc=&output=embed`;
 
   const InlineAddButton = ({ insertIdx }) => (
@@ -605,7 +513,7 @@ const ItineraryView = ({
             {isLoadingWeather ? (
               <div className="flex items-center gap-2 bg-[#FAF9F6] p-2 rounded-xl animate-pulse text-[#A39D78]">
                 <Loader2 size={18} className="animate-spin" />
-                <span>AI 氣象觀測員連線中...</span>
+                <span>天氣觀測站連線中...</span>
               </div>
             ) : (
               <>
@@ -695,7 +603,6 @@ const ItineraryView = ({
             const isStrategy = place.type === '攻略';
 
             return (
-              // 【修正重點 3】這裡的 key 改為使用 place.id，避免刪除或移動時狀態錯亂
               <React.Fragment key={place.id || idx}>
                 <div className={`relative flex items-start gap-4 group py-2 ${activeMenuIdx === idx ? 'z-[60]' : 'z-0'}`}>
                   <div className={`relative z-10 flex-shrink-0 w-12 h-12 rounded-full bg-white border-2 ${isStrategy ? 'border-orange-400 text-orange-500' : 'border-[#773690] text-[#773690]'} shadow-sm flex items-center justify-center transition-colors`}>
@@ -840,44 +747,17 @@ const ItineraryView = ({
                       </div>
                     )}
 
-                    {!isStrategy && aiTips[place.name] && (
-                      <div className="bg-purple-50/70 rounded-xl p-3 mb-4 border border-purple-100 relative group">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-1.5 text-[#773690] font-bold text-sm">
-                            ✨ AI 景點小助手
-                          </div>
-                          <button 
-                            onClick={() => handleAiExplore(place.name, place.type, true)}
-                            disabled={loadingTips[place.name]}
-                            className="text-[#773690]/60 hover:text-[#773690] transition-colors p-1"
-                            title="換個建議"
-                          >
-                            <RefreshCw size={14} className={loadingTips[place.name] ? 'animate-spin' : ''} />
-                          </button>
-                        </div>
-                        <p className="text-purple-900/80 text-sm leading-relaxed">{aiTips[place.name]}</p>
-                      </div>
-                    )}
-
                     {!isStrategy && (
-                      <div className="flex gap-2 pt-2 border-t border-gray-50 flex-wrap">
-                        {/* 【修正重點 4】單點導航網址也修正 */}
+                      <div className="flex pt-2 border-t border-gray-50">
                         <a 
                           href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}`}
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="flex-1 flex items-center justify-center gap-1.5 bg-[#FAF9F6] hover:bg-[#A39D78]/10 text-gray-700 py-2 rounded-xl text-sm font-medium transition-colors min-w-[30%]"
+                          className="w-full flex items-center justify-center gap-1.5 bg-[#FAF9F6] hover:bg-[#A39D78]/10 text-gray-700 py-2.5 rounded-xl text-sm font-medium transition-colors"
                         >
                           <Navigation size={16} className="text-[#A39D78]" />
-                          單點導航
+                          Google 地圖導航
                         </a>
-                        <button 
-                          onClick={() => handleAiExplore(place.name, place.type)}
-                          disabled={loadingTips[place.name]}
-                          className="flex-1 flex items-center justify-center gap-1.5 bg-[#773690]/5 hover:bg-[#773690]/10 text-[#773690] py-2 rounded-xl text-sm font-bold transition-colors min-w-[30%] disabled:opacity-50"
-                        >
-                          {loadingTips[place.name] && !aiTips[place.name] ? <Loader2 size={16} className="animate-spin" /> : '✨ 探索'}
-                        </button>
                       </div>
                     )}
 
@@ -888,110 +768,6 @@ const ItineraryView = ({
               </React.Fragment>
             );
           })}
-        </div>
-
-        <div className="mt-8 mb-16">
-          {dailyJournals[selectedDayIdx] ? (
-            <div className="bg-gradient-to-br from-pink-50 to-purple-50 p-5 rounded-2xl border border-pink-100 shadow-sm relative animate-in fade-in zoom-in-95 duration-300">
-              <button 
-                onClick={() => {
-                  setDailyJournals(prev => ({ ...prev, [selectedDayIdx]: null }));
-                  setShowJournalForm(false);
-                }} 
-                className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 bg-white/50 rounded-full p-1"
-              >
-                <X size={16} />
-              </button>
-              <div className="flex items-center gap-2 text-[#773690] font-bold text-sm mb-3">
-                ✨ 專屬今日貼文
-              </div>
-              <p className="text-gray-700 text-sm whitespace-pre-wrap leading-relaxed mb-5 bg-white/50 p-4 rounded-xl border border-purple-100/50">
-                {dailyJournals[selectedDayIdx]}
-              </p>
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => handleCopyJournal(dailyJournals[selectedDayIdx])} 
-                  className="flex-1 flex items-center justify-center gap-1.5 bg-white py-2.5 rounded-xl text-[#773690] font-bold text-sm border border-purple-100 hover:bg-purple-50 transition-colors shadow-sm"
-                >
-                  {copiedJournal ? <><CheckCheck size={16} className="text-green-500"/> 已複製</> : <><Copy size={16} /> 複製分享</>}
-                </button>
-                <button 
-                  onClick={handleGenerateJournal} 
-                  disabled={isGeneratingJournal} 
-                  className="flex-1 flex items-center justify-center gap-1.5 bg-[#773690] text-white py-2.5 rounded-xl font-bold text-sm hover:bg-[#602b75] transition-colors shadow-sm disabled:opacity-70"
-                >
-                  {isGeneratingJournal ? <Loader2 size={16} className="animate-spin" /> : <><RefreshCw size={16} /> 換個寫法</>}
-                </button>
-              </div>
-            </div>
-          ) : showJournalForm ? (
-            <div className="bg-white p-5 rounded-2xl border border-purple-100 shadow-sm relative animate-in fade-in zoom-in-95 duration-300">
-              <button 
-                onClick={() => setShowJournalForm(false)} 
-                className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 bg-gray-50 rounded-full p-1"
-              >
-                <X size={16} />
-              </button>
-              <div className="flex items-center gap-2 text-[#773690] font-bold text-sm mb-4">
-                ✨ 訂製專屬 IG 貼文
-              </div>
-              
-              <div className="mb-4">
-                <label className="block text-xs font-bold text-gray-600 mb-1.5">個人心情 / 想說的話 (選填)</label>
-                <textarea 
-                  value={journalMood}
-                  onChange={e => setJournalMood(e.target.value)}
-                  placeholder="例如：今天走得腳超痠，但合掌村的布丁太好吃了！"
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#773690] bg-gray-50/50 resize-none h-16"
-                />
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-xs font-bold text-gray-600 mb-1.5">貼文風格</label>
-                <div className="flex flex-wrap gap-2">
-                  {['活潑可愛', '知性文青', '幽默搞笑', '簡短限動'].map(style => (
-                    <button 
-                      key={style}
-                      onClick={() => setJournalStyle(style)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${journalStyle === style ? 'bg-[#773690] text-white' : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-100'}`}
-                    >
-                      {style}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mb-5">
-                <label className="block text-xs font-bold text-gray-600 mb-1.5">預期長度</label>
-                <div className="flex gap-2">
-                  {['短 (約50字)', '中 (約100字)', '長 (約200字)'].map(len => (
-                    <button 
-                      key={len}
-                      onClick={() => setJournalLength(len)}
-                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors border ${journalLength === len ? 'bg-[#A39D78]/10 text-[#A39D78] border-[#A39D78]/30' : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border-gray-100'}`}
-                    >
-                      {len.split(' ')[0]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button 
-                onClick={handleGenerateJournal} 
-                disabled={isGeneratingJournal} 
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-100 to-pink-100 hover:from-purple-200 hover:to-pink-200 text-[#773690] py-3.5 rounded-xl text-sm font-bold transition-all shadow-sm disabled:opacity-70"
-              >
-                {isGeneratingJournal ? <Loader2 size={18} className="animate-spin" /> : '✨ 開始生成貼文'}
-              </button>
-            </div>
-          ) : (
-            <button 
-              onClick={() => setShowJournalForm(true)} 
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-purple-100 to-pink-100 hover:from-purple-200 hover:to-pink-200 text-[#773690] py-4 rounded-2xl text-sm font-bold transition-all shadow-sm"
-            >
-              ✨ 讓 AI 幫我寫今日 IG 貼文
-            </button>
-          )}
         </div>
       </div>
 
@@ -1097,8 +873,7 @@ const ItineraryView = ({
 };
 
 const GuideView = ({ 
-  user, packingList, setPackingList, isListLoaded, updateFirestore,
-  translationHistory, setTranslationHistory, ttsCache, setTtsCache
+  user, packingList, setPackingList, isListLoaded, updateFirestore
 }) => {
   const [expandedSection, setExpandedSection] = useState(null); 
   const [newCarryOnItem, setNewCarryOnItem] = useState('');
@@ -1108,24 +883,17 @@ const GuideView = ({
   const [deletedItemInfo, setDeletedItemInfo] = useState(null); 
   const [toastMsg, setToastMsg] = useState(null);
 
-  const [aiSuggestion, setAiSuggestion] = useState('');
-  const [isAiLoading, setIsAiLoading] = useState(false);
-
   const [translateInput, setTranslateInput] = useState('');
-  const [translateData, setTranslateData] = useState(null);
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [isTTSLoading, setIsTTSLoading] = useState(false);
+  // 將翻譯結果改為陣列，以支援多重關鍵字顯示
+  const [translateResults, setTranslateResults] = useState(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   
   const [emergencyModal, setEmergencyModal] = useState({ isOpen: false, number: '', name: '' });
-  
-  const audioRef = useRef(null);
 
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
       }
     };
   }, []);
@@ -1195,110 +963,57 @@ const GuideView = ({
     setDeletedItemInfo(null);
   };
 
-  const handleAiCheckPacking = async (isRetry = false) => {
-    if (isAiLoading) return;
-    setIsAiLoading(true);
-    
-    const allItems = [
-      ...packingList.carryOn.map(i => i.text),
-      ...packingList.checked.map(i => i.text),
-      ...packingList.shopping.map(i => i.text)
-    ].join('、');
-
-    let prompt = `我正在準備去日本名古屋的 6 天 5 夜旅行（日期：4月底，包含合掌村與立山黑部行程）。我目前的行李與購物清單有：「${allItems}」。\n請擔任貼心的 AI 打包顧問，根據日本 4 月的天氣與行程特性，推薦 1 到 2 個我「可能忘記帶的實用小物品」，或是推薦一個「名古屋當地必買的隱藏版伴手禮」。\n請用繁體中文回答，語氣溫柔，字數控制在 60 字以內。`;
-
-    if (isRetry) {
-      prompt += `\n【重要提示】：這是一次重新推薦，請務必給出與剛才完全不同的新建議（例如尚未被提及的實用好物或隱藏版伴手禮）！不要重複！`;
-    }
-
-    const suggestion = await callGeminiAPI(prompt);
-    setAiSuggestion(suggestion);
-    setIsAiLoading(false);
-  };
-
-  const handleTranslate = async (e) => {
+  // --- 關鍵字辭典搜尋 ---
+  const handleSearchTranslate = (e) => {
     e.preventDefault();
-    if(!translateInput.trim() || isTranslating) return;
+    if(!translateInput.trim()) return;
     
-    setIsTranslating(true);
-    setIsPlayingAudio(false);
-    if (audioRef.current) audioRef.current.pause();
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsPlayingAudio(false);
+    }
 
-    const prompt = `我是一位在日本旅遊的台灣旅客。我想向當地人表達：「${translateInput}」。請幫我翻譯成自然、有禮貌的日文。
-請以嚴格的 JSON 格式回傳，欄位包含：
-{
-  "jp": "翻譯後的日文",
-  "romaji": "對應的羅馬拼音",
-  "tip": "簡短的日本文化或禮儀小提醒（50字以內）"
-}`;
+    const query = translateInput.toLowerCase();
+    const matchedCards = [];
 
-    try {
-      const text = await fetchGemini(prompt, true, 2);
-      const match = text.match(/\{[\s\S]*\}/); // 強制抓取 JSON 物件
-      if (match) {
-        const parsedData = JSON.parse(match[0]);
-        const newEntry = { id: Date.now(), original: translateInput, ...parsedData };
-        setTranslateData(newEntry);
-        setTranslateInput('');
-        setTranslationHistory(prev => [newEntry, ...prev.filter(item => item.original !== translateInput)].slice(0, 5));
-      } else {
-        throw new Error("Invalid JSON");
+    TRANSLATION_DICT.forEach(item => {
+      const isMatch = item.keywords.some(kw => query.includes(kw));
+      if (isMatch) {
+        matchedCards.push(item);
       }
-    } catch (error) {
-      console.error("Translation error:", error);
-      setTranslateData({
-        jp: "抱歉，連線超時！",
-        romaji: "-",
-        tip: "AI 翻譯員似乎有點忙碌，請稍後再試。"
-      });
-    }
-    setIsTranslating(false);
-  };
+    });
 
-  const playAudio = (url) => {
-    if (audioRef.current) {
-      audioRef.current.src = url;
-      audioRef.current.play().catch(e => console.error("Play error", e));
-      setIsPlayingAudio(true);
-      audioRef.current.onended = () => setIsPlayingAudio(false);
-      audioRef.current.onpause = () => setIsPlayingAudio(false);
+    if (matchedCards.length > 0) {
+      setTranslateResults(matchedCards);
+    } else {
+      // 找不到關鍵字，顯示預設委婉回應
+      setTranslateResults([DEFAULT_TRANSLATION]);
     }
   };
 
-  const handlePlayTTS = async (textToPlay = null) => {
-    const targetText = typeof textToPlay === 'string' ? textToPlay : translateData?.jp;
-    if (!targetText) return;
+  // --- 使用 Web Speech API 朗讀日文 ---
+  const handlePlayTTS = (textToPlay) => {
+    if (!textToPlay) return;
+
+    if (!('speechSynthesis' in window)) {
+      setToastMsg('您的設備或瀏覽器不支援語音功能。');
+      setTimeout(() => setToastMsg(null), 3000);
+      return;
+    }
 
     if (isPlayingAudio) {
-      audioRef.current?.pause();
+      window.speechSynthesis.cancel();
       setIsPlayingAudio(false);
       return;
     }
 
-    if (ttsCache[targetText]) {
-      playAudio(ttsCache[targetText]);
-      return;
-    }
-
-    setIsTTSLoading(true);
-    const audioUrl = await callGeminiTTS(targetText);
-    setIsTTSLoading(false);
-
-    if (audioUrl) {
-      setTtsCache(prev => ({ ...prev, [targetText]: audioUrl }));
-      playAudio(audioUrl);
-    } else {
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(targetText);
-        utterance.lang = 'ja-JP';
-        window.speechSynthesis.speak(utterance);
-        setToastMsg('網路較慢，已切換為備用語音。');
-        setTimeout(() => setToastMsg(null), 3000);
-      } else {
-        setToastMsg('語音載入失敗，請稍後再試。');
-        setTimeout(() => setToastMsg(null), 3000);
-      }
-    }
+    const utterance = new SpeechSynthesisUtterance(textToPlay);
+    utterance.lang = 'ja-JP';
+    utterance.onstart = () => setIsPlayingAudio(true);
+    utterance.onend = () => setIsPlayingAudio(false);
+    utterance.onerror = () => setIsPlayingAudio(false);
+    
+    window.speechSynthesis.speak(utterance);
   };
 
   const handleModalCall = (number, name) => {
@@ -1386,21 +1101,24 @@ const GuideView = ({
         {expandedSection === 'translator' && (
           <div className="p-5 pt-0 border-t border-gray-50">
             <p className="text-xs text-gray-500 mb-3 flex items-center gap-1">
-              <Info size={12} /> 輸入你想說的中文，AI 幫你翻成道地日文！
+              <Info size={12} /> 輸入你想說的話 (如：廁所、拍照、結帳)
             </p>
-            <form onSubmit={handleTranslate} className="flex gap-2 mb-4">
+            <form onSubmit={handleSearchTranslate} className="flex gap-2 mb-2">
               <div className="relative flex-1">
                 <input 
                   type="text" 
                   value={translateInput} 
                   onChange={(e) => setTranslateInput(e.target.value)} 
-                  placeholder="例如：請問可以拍照嗎？" 
+                  placeholder="請輸入關鍵字..." 
                   className="w-full px-3 py-2.5 pr-8 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-[#773690] bg-gray-50/50" 
                 />
                 {translateInput && (
                   <button 
                     type="button" 
-                    onClick={() => setTranslateInput('')} 
+                    onClick={() => {
+                      setTranslateInput('');
+                      setTranslateResults(null);
+                    }} 
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#773690] p-1"
                   >
                     <X size={16} />
@@ -1409,91 +1127,58 @@ const GuideView = ({
               </div>
               <button 
                 type="submit" 
-                disabled={isTranslating || !translateInput.trim()} 
+                disabled={!translateInput.trim()} 
                 className="bg-[#773690] text-white px-4 rounded-xl hover:bg-[#602b75] transition-colors disabled:opacity-50 font-bold text-sm flex items-center justify-center min-w-[70px]"
               >
-                {isTranslating ? <Loader2 size={18} className="animate-spin" /> : '翻譯'}
+                查詢
               </button>
             </form>
             
-            {translateData && (
-              <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#A39D78]/20 animate-in fade-in slide-in-from-top-2 duration-300">
-                {translateData.original && (
-                  <div className="mb-3 pb-3 border-b border-[#A39D78]/10">
-                    <h5 className="text-[10px] font-bold text-gray-400 mb-0.5">【你的原文】</h5>
-                    <p className="text-sm font-medium text-gray-700">{translateData.original}</p>
-                  </div>
-                )}
-                <div className="flex justify-between items-start gap-2 mb-2">
-                  <div className="flex-1">
-                    <h5 className="text-[10px] font-bold text-[#A39D78] mb-1">【日文】</h5>
-                    <p className="text-lg text-gray-800 font-bold leading-relaxed">{translateData.jp}</p>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      if ('speechSynthesis' in window) {
-                        const unlockUtterance = new SpeechSynthesisUtterance('');
-                        unlockUtterance.volume = 0;
-                        window.speechSynthesis.speak(unlockUtterance);
-                        window.speechSynthesis.cancel();
-                      }
-                      handlePlayTTS(translateData.jp);
-                    }}
-                    disabled={isTTSLoading}
-                    className={`p-3 rounded-full shadow-sm transition-colors flex-shrink-0 flex items-center justify-center ${isPlayingAudio ? 'bg-[#773690] text-white animate-pulse' : 'bg-white text-[#773690] hover:bg-gray-50 border border-purple-100'}`}
-                  >
-                    {isTTSLoading ? <Loader2 size={20} className="animate-spin" /> : <Volume2 size={20} />}
-                  </button>
-                </div>
-                
-                <div className="mb-4">
-                  <h5 className="text-[10px] font-bold text-[#A39D78] mb-0.5">【羅馬拼音】</h5>
-                  <p className="text-xs text-gray-500">{translateData.romaji}</p>
-                </div>
-
-                {translateData.tip && (
-                  <div className="bg-white p-3 rounded-xl border border-gray-100">
-                    <h5 className="text-[10px] font-bold text-[#773690] mb-1 flex items-center gap-1">
-                       <Info size={14} /> 文化小提醒
-                    </h5>
-                    <p className="text-xs text-gray-600 leading-snug">{translateData.tip}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {translationHistory.length > 0 && (
-              <div className="mt-5 border-t border-gray-100 pt-4">
-                <h5 className="text-xs font-bold text-gray-400 mb-3 px-1">近期翻譯紀錄</h5>
-                <div className="space-y-2">
-                  {translationHistory.map(item => (
-                    <div 
-                      key={item.id} 
-                      onClick={() => setTranslateData(item)}
-                      className="flex items-center justify-between bg-gray-50/80 p-3 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors border border-transparent hover:border-gray-200"
-                    >
-                      <div className="flex-1 min-w-0 pr-3">
-                        <p className="text-[11px] text-gray-500 truncate mb-0.5">{item.original}</p>
-                        <p className="text-sm font-bold text-gray-700 truncate">{item.jp}</p>
+            {translateResults && (
+              <div className="space-y-3 mt-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                {translateResults.map((data, idx) => (
+                  <div key={idx} className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#A39D78]/20 relative overflow-hidden">
+                    <div className="flex justify-between items-start gap-2 mb-2">
+                      <div className="flex-1">
+                        <h5 className="text-[10px] font-bold text-[#A39D78] mb-1">【日文】</h5>
+                        <p className="text-lg text-gray-800 font-bold leading-relaxed">{data.jp}</p>
                       </div>
                       <button 
-                        onClick={(e) => { 
-                          e.stopPropagation();
+                        onClick={() => {
+                          // 先建立空的互動來解鎖語音權限（針對 iOS Safari）
                           if ('speechSynthesis' in window) {
                             const unlockUtterance = new SpeechSynthesisUtterance('');
                             unlockUtterance.volume = 0;
                             window.speechSynthesis.speak(unlockUtterance);
-                            window.speechSynthesis.cancel();
                           }
-                          handlePlayTTS(item.jp); 
-                        }} 
-                        className="p-2 bg-white rounded-full text-[#773690] shadow-sm hover:bg-purple-50 transition-colors"
+                          handlePlayTTS(data.jp);
+                        }}
+                        className={`p-3 rounded-full shadow-sm transition-colors flex-shrink-0 flex items-center justify-center ${isPlayingAudio ? 'bg-[#773690] text-white animate-pulse' : 'bg-white text-[#773690] hover:bg-gray-50 border border-purple-100'}`}
                       >
-                        <Volume2 size={16} />
+                        <Volume2 size={20} />
                       </button>
                     </div>
-                  ))}
-                </div>
+                    
+                    <div className="mb-4">
+                      <h5 className="text-[10px] font-bold text-[#A39D78] mb-0.5">【羅馬拼音】</h5>
+                      <p className="text-xs text-gray-500">{data.romaji}</p>
+                    </div>
+
+                    <div className="mb-4">
+                      <h5 className="text-[10px] font-bold text-[#A39D78] mb-0.5">【中文對照】</h5>
+                      <p className="text-xs text-gray-700 font-medium">{data.zh}</p>
+                    </div>
+
+                    {data.tip && (
+                      <div className="bg-white p-3 rounded-xl border border-gray-100">
+                        <h5 className="text-[10px] font-bold text-[#773690] mb-1 flex items-center gap-1">
+                           <Info size={14} /> 小提醒
+                        </h5>
+                        <p className="text-xs text-gray-600 leading-snug">{data.tip}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1615,38 +1300,10 @@ const GuideView = ({
               </>
             )}
 
-            <div className="pt-2">
-              {aiSuggestion ? (
-                <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100">
-                  <div className="flex items-center gap-2 text-[#773690] font-bold text-sm mb-2">
-                    ✨ AI 智能打包建議
-                  </div>
-                  <p className="text-purple-900 text-sm leading-relaxed">{aiSuggestion}</p>
-                  <button 
-                    onClick={() => handleAiCheckPacking(true)}
-                    disabled={isAiLoading}
-                    className="mt-3 text-xs text-[#773690] underline font-medium flex items-center gap-1 disabled:opacity-50"
-                  >
-                    {isAiLoading && <Loader2 size={12} className="animate-spin" />}
-                    再給我一個建議
-                  </button>
-                </div>
-              ) : (
-                <button 
-                  onClick={() => handleAiCheckPacking(false)}
-                  disabled={isAiLoading || !isListLoaded}
-                  className="w-full flex items-center justify-center gap-2 bg-[#773690]/5 hover:bg-[#773690]/10 text-[#773690] py-3 rounded-2xl text-sm font-bold transition-colors disabled:opacity-50"
-                >
-                  {isAiLoading ? <Loader2 size={18} className="animate-spin" /> : '✨ AI 幫我檢查清單'}
-                </button>
-              )}
-            </div>
-
           </div>
         )}
       </div>
 
-      {/* 【修正重點 5】修正 Toast 元件阻擋點擊的問題 */}
       {toastMsg && (
         <div className="fixed bottom-[80px] left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-3 rounded-full shadow-2xl flex items-center gap-4 z-[110] animate-in slide-in-from-bottom-5 pointer-events-none">
           <span className="text-sm whitespace-nowrap">{toastMsg}</span>
@@ -1684,7 +1341,6 @@ const GuideView = ({
         </div>
       )}
 
-      <audio ref={audioRef} className="hidden" playsInline />
     </div>
   );
 };
@@ -1769,19 +1425,14 @@ export default function App() {
   };
   const [itineraryData, setItineraryData] = useState(getInitialItinerary());
   
-  const [dailyJournals, setDailyJournals] = useState({});
-  const [translationHistory, setTranslationHistory] = useState([]);
-  const [ttsCache, setTtsCache] = useState({});
-  const [aiTips, setAiTips] = useState({});
   const [previewImage, setPreviewImage] = useState(null);
 
   useEffect(() => {
     if (!auth) {
       setUser({ uid: 'safari-offline-user' });
-      // 就算離線也要載入天氣
       setIsLoadingWeather(true);
-      fetchDynamicWeather().then(data => {
-        if (data && Array.isArray(data) && data.length === 6) {
+      fetchRealWeather().then(data => {
+        if (data && Array.isArray(data)) {
           setWeatherData(data);
         }
         setIsLoadingWeather(false);
@@ -1797,7 +1448,7 @@ export default function App() {
           await signInAnonymously(auth);
         }
       } catch (error) {
-        console.warn("Firebase 登入失敗 (可能被 Safari ITP 阻擋)，切換至離線模式");
+        console.warn("Firebase 登入失敗，切換至離線模式");
         setUser({ uid: 'safari-offline-user' });
       }
     };
@@ -1808,8 +1459,8 @@ export default function App() {
     });
     
     setIsLoadingWeather(true);
-    fetchDynamicWeather().then(data => {
-      if (data && Array.isArray(data) && data.length === 6) {
+    fetchRealWeather().then(data => {
+      if (data && Array.isArray(data)) {
         setWeatherData(data);
       }
       setIsLoadingWeather(false);
@@ -1867,7 +1518,7 @@ export default function App() {
       const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'packingList');
       await setDoc(docRef, newList);
     } catch(e) {
-      console.warn("Safari 阻擋了資料儲存:", e);
+      console.warn("儲存受阻:", e);
     }
   };
 
@@ -1878,7 +1529,7 @@ export default function App() {
       const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'itinerary');
       await setDoc(docRef, { data: newData });
     } catch(e) {
-      console.warn("Safari 阻擋了行程儲存:", e);
+      console.warn("行程儲存受阻:", e);
     }
   };
 
@@ -1919,10 +1570,6 @@ export default function App() {
                 user={user} 
                 weatherData={weatherData} 
                 isLoadingWeather={isLoadingWeather}
-                dailyJournals={dailyJournals}
-                setDailyJournals={setDailyJournals}
-                aiTips={aiTips}
-                setAiTips={setAiTips}
                 setPreviewImage={setPreviewImage}
                 itineraryData={itineraryData}
                 setItineraryData={setItineraryData}
@@ -1936,10 +1583,6 @@ export default function App() {
                 setPackingList={setPackingList}
                 isListLoaded={isListLoaded}
                 updateFirestore={updateFirestorePacking}
-                translationHistory={translationHistory}
-                setTranslationHistory={setTranslationHistory}
-                ttsCache={ttsCache}
-                setTtsCache={setTtsCache}
               />
             )}
             {activeTab === 'weather' && (
