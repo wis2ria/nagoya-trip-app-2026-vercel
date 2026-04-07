@@ -346,6 +346,46 @@ const getDocColorClass = (iconName) => {
 
 // --- MAIN VIEWS ---
 
+const ScrollToTopButton = ({ activeTab }) => {
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    // 每次切換分頁時，先將按鈕隱藏重置
+    setIsVisible(false);
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handleScroll = (e) => {
+      const target = e.target;
+      // 改用 100% 準確的全域攔截，並將門檻大幅降低至 150px，稍微往下滑就會出現！
+      if (target && target.id === 'scroll-container') {
+        setIsVisible(target.scrollTop > 150);
+      }
+    };
+
+    // 使用 capture 階段攔截所有捲動事件，絕不漏接
+    window.addEventListener('scroll', handleScroll, true);
+    return () => window.removeEventListener('scroll', handleScroll, true);
+  }, []);
+
+  return (
+    <button
+      onClick={() => {
+        const container = document.getElementById('scroll-container');
+        container?.scrollTo({ top: 0, behavior: 'smooth' });
+      }}
+      className={`absolute bottom-6 right-5 z-[100] p-3 rounded-full bg-[#773690] text-white shadow-lg transition-all duration-300 ${
+        isVisible 
+          ? 'opacity-40 hover:opacity-70 active:opacity-70 translate-y-0 pointer-events-auto' 
+          : 'opacity-0 translate-y-4 pointer-events-none'
+      }`}
+      aria-label="回到頂部"
+    >
+      <ChevronUp size={24} strokeWidth={2.5} />
+    </button>
+  );
+};
+
 const ItineraryView = ({ 
   user, weatherData, isLoadingWeather, setPreviewImage, itineraryData, setItineraryData, updateFirestoreItinerary
 }) => {
@@ -479,7 +519,7 @@ const ItineraryView = ({
   );
 
   return (
-    <div className="h-full overflow-y-auto hide-scrollbar relative pb-[calc(1.5rem+env(safe-area-inset-bottom))] animate-in fade-in duration-300" ref={viewRef}>
+    <div id="scroll-container" className="h-full overflow-y-auto hide-scrollbar relative pb-[calc(1.5rem+env(safe-area-inset-bottom))] animate-in fade-in duration-300" ref={viewRef}>
       
       <div className="sticky top-0 bg-[#FAF9F6]/95 backdrop-blur-md z-[40] py-3 border-b border-[#A39D78]/20 shadow-sm">
         <div ref={dayNavRef} className="flex overflow-x-auto hide-scrollbar px-4 gap-3 scroll-smooth">
@@ -1064,7 +1104,7 @@ const GuideView = ({
   const shoppingStats = getProgress('shopping');
 
   return (
-    <div className="h-full overflow-y-auto hide-scrollbar px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] space-y-4 animate-in fade-in duration-300 relative">
+    <div id="scroll-container" className="h-full overflow-y-auto hide-scrollbar px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] space-y-4 animate-in fade-in duration-300 relative">
       
       <div className="flex overflow-x-auto hide-scrollbar gap-3 pb-2 -mx-4 px-4 mb-2">
         <button 
@@ -1358,7 +1398,7 @@ const WeatherView = ({ weatherData, isLoadingWeather }) => {
   const displayData = weatherData || fallbackWeatherForecast;
 
   return (
-    <div className="h-full overflow-y-auto hide-scrollbar px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] space-y-6 animate-in fade-in duration-300">
+    <div id="scroll-container" className="h-full overflow-y-auto hide-scrollbar px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] space-y-6 animate-in fade-in duration-300">
       <section>
         <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
           <Sun className="text-[#A39D78]" size={20} />
@@ -1591,6 +1631,7 @@ export default function App() {
                 isLoadingWeather={isLoadingWeather} 
               />
             )}
+            <ScrollToTopButton activeTab={activeTab} />
           </main>
 
           <nav className="flex-shrink-0 w-full bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] z-20 pb-[env(safe-area-inset-bottom)] relative">
