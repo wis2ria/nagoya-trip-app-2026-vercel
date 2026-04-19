@@ -235,12 +235,13 @@ const mockData = {
         { "id": generateId(), "type": "景點", "name": "三光稻荷神社 & 針綱神社", "description": "步行至天守閣途中的必經之地，人潮尚少。\n到「錢洗受付處」奉納 100 日圓，洗錢祈求財運。", "duration": "上午", "badges": ["必拍", "放鬆"], "goshuins": [{ "name": "三光稲荷神社", "price": "500円" }, { "name": "猿田彦神社", "price": "500円" }, { "name": "針綱神社", "price": "500円" }] },
         { "id": generateId(), "type": "景點", "name": "國寶犬山城天守閣", "description": "09:00 開門，此時抵達能完美避開 10:30 後的團體客！登上最頂層，享受木曾川微風並俯瞰城下町。", "duration": "09:30 - 11:00", "badges": ["絕景", "必拍"], "gojoins": [{ "name": "御城印", "price": "300円" }, { "name": "專屬御城印帳", "price": "2400円" }], "extraImages": [{ "title": "車站步行路線", "url": "https://inuyamajo.jp/wp-content/uploads/2020/03/route-from-station-en-1.png" }, { "title": "三條登山路線", "url": "https://inuyamajo.jp/wp-content/uploads/2020/03/three-routes-en-1.png" }] },
         { "id": generateId(), "type": "食物", "name": "犬山城下町散策：山田五平餅店", "description": "這棟建築本身是日本登錄有形文化財。品嚐現點現烤的傳統「五平餅」配上一杯熱茶。", "duration": "中午", "badges": ["必吃", "放鬆"] },
-        { "id": generateId(), "type": "交通", "name": "犬山 → 上前津", "description": "路線：犬山站 →（名鐵犬山線直通運轉）→ 上小田井站（系統切換點）→（地下鐵鶴舞線）→ 上前津站。免下車即可直達！", "duration": "下午", "badges": ["交通", "順路"] },
+        { "id": generateId(), "type": "交通", "name": "犬山站 → 大須觀音站", "description": "從犬山站搭乘名鐵犬山線（直通地下鐵鶴舞線）抵達大須觀音站。\n直達大須觀音寺的出口：請走 2 號出口。", "duration": "下午", "badges": ["交通", "順路"] },
+        { "id": generateId(), "type": "景點", "name": "大須觀音寺", "openHours": "09:00 - 17:00", "description": "正式名稱為北野山真福寺寶生院，與淺草觀音、津觀音並列為日本三大觀音。從大須觀音站 2 號出口出來即可抵達。", "duration": "下午", "badges": ["景點"], "goshuins": [{ "name": "大須觀音寺", "price": "500円" }] },
         { "id": generateId(), "type": "攻略", "name": "🎫 大須商店街攻略", "description": "準備進入名古屋最熱鬧的商店街！您可以搭配這份官方地圖，輕鬆找到想去的街道與店家。", "duration": "參考", "badges": ["實用地圖"], "links": [{ "text": "大須官方地圖 (PDF)", "url": "https://osu.nagoya/images/osumap/01-02.pdf", "type": "pdf" }] },
-        { "id": generateId(), "type": "購物", "name": "大須商店街尋寶散策", "description": "從上前津站 8 號出口出發，建議的精華散步路線：\n新天地通 ➔ 巨大招財貓地標 ➔ 三輪神社 ➔ 赤門通 ➔ 大須觀音通 ➔ 大須觀音寺", "duration": "下午", "badges": ["必買", "尋寶"] },
+        { "id": generateId(), "type": "購物", "name": "大須商店街尋寶散策", "description": "從大須觀音寺出發，沿著大須觀音通一路往東逛，探索沿途的美食與特色小店，慢慢朝著三輪神社與新天地通的方向散步。", "duration": "下午", "badges": ["必買", "尋寶"] },
         { "id": generateId(), "type": "景點", "name": "三輪神社", "openHours": "09:00 - 17:00", "description": "祭祀大物主神，神話中的「因幡白兔」被視為神祇使者，境內有大量兔子元素。", "duration": "傍晚", "badges": ["放鬆", "必拍"], "goshuins": [{ "name": "三輪神社", "price": "400円" }] },
-        { "id": generateId(), "type": "景點", "name": "大須觀音寺", "openHours": "09:00 - 17:00", "description": "正式名稱為北野山真福寺寶生院，與淺草觀音、津觀音並列為日本三大觀音。", "duration": "傍晚", "badges": ["景點"], "goshuins": [{ "name": "大須觀音寺", "price": "500円" }] },
-        { "id": generateId(), "type": "交通", "name": "大須觀音站 ➔ 名古屋站", "description": "搭乘地下鐵鶴舞線至「伏見站」，轉乘東山線回到「名古屋站」。出站後步行返回飯店休息。", "duration": "晚上", "badges": ["交通", "順路"] }
+        { "id": generateId(), "type": "購物", "name": "名古屋 PARCO", "description": "• Pomme d'Amour Tokyo (蘋果糖專賣店)｜西館 B1F\n• Chiikawa Land (吉伊卡哇)｜東館 3F", "duration": "晚上", "badges": ["必買"], "links": [{ "text": "Chiikawa Land 官網", "url": "https://chiikawa-info.jp/chiikawaland/nagoya/", "type": "link" }] },
+        { "id": generateId(), "type": "交通", "name": "矢場町站 → 榮站 → 名古屋站", "description": "在地下鐵「矢場町站」，搭乘名城線到「榮站」，轉乘東山線即可回到「名古屋車站」。", "duration": "晚上", "badges": ["交通", "順路"] }
       ]
     },
     {
